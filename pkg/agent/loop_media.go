@@ -24,7 +24,7 @@ import (
 // Uses streaming base64 encoding (file handle → encoder → buffer) to avoid holding
 // both raw bytes and encoded string in memory simultaneously.
 // Returns a new slice; original messages are not mutated.
-func resolveMediaRefs(messages []providers.Message, store media.MediaStore, maxSize int) []providers.Message {
+func resolveMediaRefs(messages []providers.Message, store media.MediaStore, maxSize int64) []providers.Message {
 	if store == nil {
 		return messages
 	}
@@ -61,7 +61,7 @@ func resolveMediaRefs(messages []providers.Message, store media.MediaStore, maxS
 				})
 				continue
 			}
-			if info.Size() > int64(maxSize) {
+			if info.Size() > maxSize {
 				logger.WarnCF("agent", "Media file too large, skipping", map[string]any{
 					"path":     localPath,
 					"size":     info.Size(),

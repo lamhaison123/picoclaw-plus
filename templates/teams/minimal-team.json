@@ -1,0 +1,29 @@
+{
+  "team_id": "minimal-team",
+  "name": "Minimal Team",
+  "description": "Minimal team configuration with 2 roles",
+  "pattern": "parallel",
+  "roles": [
+    {
+      "name": "architect",
+      "description": "System architect",
+      "capabilities": ["design", "architecture"],
+      "model": "claude-3-5-sonnet-20241022",
+      "tools": ["*"]
+    },
+    {
+      "name": "developer",
+      "description": "Software developer",
+      "capabilities": ["coding", "implementation"],
+      "model": "claude-3-5-sonnet-20241022",
+      "tools": ["*"]
+    }
+  ],
+  "coordinator": {
+    "role": "architect"
+  },
+  "settings": {
+    "max_delegation_depth": 3,
+    "agent_timeout_seconds": 300
+  }
+}

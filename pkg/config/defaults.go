@@ -347,6 +347,7 @@ func DefaultConfig() *Config {
 			},
 			Exec: ExecConfig{
 				EnableDenyPatterns: true,
+				SafetyLevel:        "moderate", // Default safety level
 			},
 			Skills: SkillsToolsConfig{
 				Registries: SkillsRegistriesConfig{

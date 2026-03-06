@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/fileutil"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 // validatePath ensures the given path is within the workspace if restrict is true.
+// Includes TOCTOU protection by re-validating after initial checks.
 func validatePath(path, workspace string, restrict bool) (string, error) {
 	if workspace == "" {
 		return path, fmt.Errorf("workspace is not defined")
@@ -35,10 +37,12 @@ func validatePath(path, workspace string, restrict bool) (string, error) {
 	}
 
 	if restrict {
+		// First check: basic path validation
 		if !isWithinWorkspace(absPath, absWorkspace) {
 			return "", fmt.Errorf("access denied: path is outside the workspace")
 		}
 
+		// Second check: resolve symlinks and validate again
 		var resolved string
 		workspaceReal := absWorkspace
 		if resolved, err = filepath.EvalSymlinks(absWorkspace); err == nil {
@@ -48,6 +52,17 @@ func validatePath(path, workspace string, restrict bool) (string, error) {
 		if resolved, err = filepath.EvalSymlinks(absPath); err == nil {
 			if !isWithinWorkspace(resolved, workspaceReal) {
 				return "", fmt.Errorf("access denied: symlink resolves outside workspace")
+			}
+
+			// TOCTOU protection: re-validate the resolved path
+			// Check if symlink target changed between resolution and validation
+			if reResolved, reErr := filepath.EvalSymlinks(absPath); reErr == nil {
+				if reResolved != resolved {
+					return "", fmt.Errorf("access denied: symlink target changed during validation (TOCTOU)")
+				}
+				if !isWithinWorkspace(reResolved, workspaceReal) {
+					return "", fmt.Errorf("access denied: symlink target outside workspace after re-validation")
+				}
 			}
 		} else if os.IsNotExist(err) {
 			var parentResolved string
@@ -368,7 +383,11 @@ func (r *sandboxFs) WriteFile(path string, data []byte) error {
 
 		// Sync directory to ensure rename is durable
 		if dirFile, err := root.Open("."); err == nil {
-			_ = dirFile.Sync()
+			if syncErr := dirFile.Sync(); syncErr != nil {
+				logger.WarnCF("filesystem", "Failed to sync directory", map[string]any{
+					"error": syncErr.Error(),
+				})
+			}
 			dirFile.Close()
 		}
 

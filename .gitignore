@@ -11,7 +11,7 @@ build/
 /picoclaw
 /picoclaw-test
 cmd/**/workspace
-
+.kiro/
 # Picoclaw specific
 
 # PicoClaw

@@ -323,6 +323,9 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	sm := t.manager
 	sm.mu.RLock()
 	tools := sm.tools
+	if tools == nil {
+		tools = NewToolRegistry() // Initialize empty registry if nil
+	}
 	maxIter := sm.maxIterations
 	maxTokens := sm.maxTokens
 	temperature := sm.temperature

@@ -79,6 +79,37 @@ func (r *AgentRegistry) ListAgentIDs() []string {
 	return ids
 }
 
+// RegisterTeamAgent registers a new agent instance for a team role
+func (r *AgentRegistry) RegisterTeamAgent(agentID string, instance *AgentInstance) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	normalizedID := routing.NormalizeAgentID(agentID)
+	r.agents[normalizedID] = instance
+
+	logger.InfoCF("agent", "Registered team agent",
+		map[string]any{
+			"agent_id":  normalizedID,
+			"name":      instance.Name,
+			"workspace": instance.Workspace,
+			"model":     instance.Model,
+		})
+}
+
+// UnregisterAgent removes an agent from the registry
+func (r *AgentRegistry) UnregisterAgent(agentID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	normalizedID := routing.NormalizeAgentID(agentID)
+	delete(r.agents, normalizedID)
+
+	logger.DebugCF("agent", "Unregistered agent",
+		map[string]any{
+			"agent_id": normalizedID,
+		})
+}
+
 // CanSpawnSubagent checks if parentAgentID is allowed to spawn targetAgentID.
 func (r *AgentRegistry) CanSpawnSubagent(parentAgentID, targetAgentID string) bool {
 	parent, ok := r.GetAgent(parentAgentID)

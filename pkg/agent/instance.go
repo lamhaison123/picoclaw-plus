@@ -44,7 +44,25 @@ func NewAgentInstance(
 	provider providers.LLMProvider,
 ) *AgentInstance {
 	workspace := resolveAgentWorkspace(agentCfg, defaults)
-	os.MkdirAll(workspace, 0o755)
+
+	// Validate workspace path
+	if workspace == "" {
+		log.Fatal("Critical error: workspace path cannot be empty")
+	}
+
+	// Ensure workspace is absolute path
+	if !filepath.IsAbs(workspace) {
+		absWorkspace, err := filepath.Abs(workspace)
+		if err != nil {
+			log.Fatalf("Critical error: unable to resolve workspace path %q: %v", workspace, err)
+		}
+		workspace = absWorkspace
+	}
+
+	// Create workspace directory
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		log.Fatalf("Critical error: unable to create workspace directory %q: %v", workspace, err)
+	}
 
 	model := resolveAgentModel(agentCfg, defaults)
 	fallbacks := resolveAgentFallbacks(agentCfg, defaults)

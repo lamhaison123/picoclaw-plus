@@ -1,0 +1,350 @@
+═══════════════════════════════════════════════════════════════════════════════
+  IRC-STYLE COLLABORATIVE CHAT - FLOW DIAGRAM
+═══════════════════════════════════════════════════════════════════════════════
+
+STEP 1: USER SENDS MESSAGE
+═══════════════════════════════════════════════════════════════════════════════
+
+    👤 User (Telegram)
+    │
+    │  Message: "@architect @developer How to implement authentication?"
+    │
+    ▼
+    
+    📱 Telegram Bot API
+    │
+    │  Webhook/Long Polling
+    │
+    ▼
+
+
+STEP 2: MESSAGE PROCESSING
+═══════════════════════════════════════════════════════════════════════════════
+
+    ┌─────────────────────────────────────────────────────────────┐
+    │  TelegramChannel.handleMessage()                            │
+    │                                                             │
+    │  1. Parse message content                                   │
+    │  2. Check: collaborative_chat.enabled? ✓                    │
+    │  3. Extract mentions: ["architect", "developer"]            │
+    │  4. Route to → handleCollaborativeMessage()                 │
+    └─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+
+
+STEP 3: SESSION & CONTEXT MANAGEMENT
+═══════════════════════════════════════════════════════════════════════════════
+
+    ┌─────────────────────────────────────────────────────────────┐
+    │  CollaborativeChatManager                                   │
+    │                                                             │
+    │  Get/Create Session for chat_id: 123456789                 │
+    │  ├─ SessionID: abc123                                       │
+    │  ├─ TeamID: dev-team                                        │
+    │  └─ Context: [                                              │
+    │      {author: "user", content: "@architect help", ...},     │
+    │      {author: "architect", content: "I recommend...", ...}, │
+    │      ...                                                    │
+    │    ]                                                        │
+    │                                                             │
+    │  Add new message to context ✓                              │
+    └─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+
+
+STEP 4: GET TEAMMANAGER
+═══════════════════════════════════════════════════════════════════════════════
+
+    ┌─────────────────────────────────────────────────────────────┐
+    │  TelegramChannel                                            │
+    │  │                                                           │
+    │  ├─ GetPlaceholderRecorder() → ChannelManager              │
+    │  │                                                           │
+    │  └─ ChannelManager.GetTeamManager() → TeamManager          │
+    └─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+
+
+STEP 5: BUILD CONTEXT STRING
+═══════════════════════════════════════════════════════════════════════════════
+
+    ┌─────────────────────────────────────────────────────────────┐
+    │  Session.GetContextAsString()                               │
+    │                                                             │
+    │  Output:                                                    │
+    │  ┌───────────────────────────────────────────────────────┐ │
+    │  │ === Collaborative Chat Context ===                    │ │
+    │  │ Session: abc123 | Team: dev-team                      │ │
+    │  │ === Conversation History ===                          │ │
+    │  │                                                        │ │
+    │  │ [14:30:15] USER: @architect how to design auth?       │ │
+    │  │ [14:30:20] 🏗️ ARCHITECT: I recommend JWT tokens...   │ │
+    │  │ [14:30:25] USER: @developer can you implement that?   │ │
+    │  └───────────────────────────────────────────────────────┘ │
+    └─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+
+
+STEP 6: PARALLEL AGENT EXECUTION
+═══════════════════════════════════════════════════════════════════════════════
+
+    For each mention: ["architect", "developer"]
+    
+    ┌──────────────────────────┐     ┌──────────────────────────┐
+    │  Goroutine 1             │     │  Goroutine 2             │
+    │  @architect              │     │  @developer              │
+    │                          │     │                          │
+    │  1. Update status:       │     │  1. Update status:       │
+    │     "thinking"           │     │     "thinking"           │
+    │                          │     │                          │
+    │  2. Build prompt:        │     │  2. Build prompt:        │
+    │     Context +            │     │     Context +            │
+    │     "You are @architect" │     │     "You are @developer" │
+    │                          │     │                          │
+    │  3. Call TeamManager     │     │  3. Call TeamManager     │
+    │     ExecuteTaskWithRole( │     │     ExecuteTaskWithRole( │
+    │       "dev-team",        │     │       "dev-team",        │
+    │       prompt,            │     │       prompt,            │
+    │       "architect"        │     │       "developer"        │
+    │     )                    │     │     )                    │
+    │                          │     │                          │
+    │  4. Wait for LLM...      │     │  4. Wait for LLM...      │
+    │     ⏳ 3 seconds         │     │     ⏳ 3 seconds         │
+    │                          │     │                          │
+    │  5. Format response      │     │  5. Format response      │
+    │  6. Send to Telegram     │     │  6. Send to Telegram     │
+    │  7. Update status: "idle"│     │  7. Update status: "idle"│
+    └──────────────────────────┘     └──────────────────────────┘
+                │                                  │
+                │  PARALLEL EXECUTION              │
+                │  (both run at same time)         │
+                │                                  │
+                ▼                                  ▼
+
+
+STEP 7: TEAMMANAGER EXECUTION
+═══════════════════════════════════════════════════════════════════════════════
+
+    ┌─────────────────────────────────────────────────────────────┐
+    │  TeamManager.ExecuteTaskWithRole()                          │
+    │                                                             │
+    │  1. Get team: "dev-team"                                    │
+    │  2. Validate role: "architect" exists ✓                     │
+    │  3. Create CoordinatorAgent                                 │
+    │  4. Create Task with prompt                                 │
+    │  5. Execute based on pattern: "parallel"                    │
+    │     └─ CoordinatorAgent.ExecuteParallel()                   │
+    │        └─ DirectAgentExecutor.Execute()                     │
+    │           └─ AgentLoop.ProcessMessage()                     │
+    │              └─ LLM API Call                                │
+    │                                                             │
+    │  6. Return result                                           │
+    └─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+
+
+STEP 8: LLM PROCESSING
+═══════════════════════════════════════════════════════════════════════════════
+
+    ┌─────────────────────────────────────────────────────────────┐
+    │  LLM (Claude/GPT/etc)                                       │
+    │                                                             │
+    │  Input:                                                     │
+    │  ┌───────────────────────────────────────────────────────┐ │
+    │  │ === Collaborative Chat Context ===                    │ │
+    │  │ [conversation history...]                             │ │
+    │  │                                                        │ │
+    │  │ User message: @architect how to implement auth?       │ │
+    │  │                                                        │ │
+    │  │ You are @architect. Respond considering the           │ │
+    │  │ conversation history above.                           │ │
+    │  └───────────────────────────────────────────────────────┘ │
+    │                                                             │
+    │  Processing... 🤔                                           │
+    │                                                             │
+    │  Output:                                                    │
+    │  ┌───────────────────────────────────────────────────────┐ │
+    │  │ I recommend using JWT tokens with the following       │ │
+    │  │ approach:                                             │ │
+    │  │ 1. User login with credentials                        │ │
+    │  │ 2. Server validates and issues JWT                    │ │
+    │  │ 3. Client stores JWT in localStorage                  │ │
+    │  │ 4. Include JWT in Authorization header               │ │
+    │  │ ...                                                   │ │
+    │  └───────────────────────────────────────────────────────┘ │
+    └─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+
+
+STEP 9: FORMAT & SEND RESPONSE
+═══════════════════════════════════════════════════════════════════════════════
+
+    ┌─────────────────────────────────────────────────────────────┐
+    │  Format IRC-style                                           │
+    │                                                             │
+    │  [abc123] 🏗️ ARCHITECT: I recommend using JWT tokens...   │
+    │  [abc123] 💻 DEVELOPER: I can implement that using...      │
+    │                                                             │
+    │  Send to Telegram Bot API                                   │
+    └─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+    
+    📱 Telegram Bot API
+    │
+    │  Deliver messages
+    │
+    ▼
+    
+    👤 User sees responses
+
+
+STEP 10: UPDATE SESSION CONTEXT
+═══════════════════════════════════════════════════════════════════════════════
+
+    ┌─────────────────────────────────────────────────────────────┐
+    │  Session.AddMessage()                                       │
+    │                                                             │
+    │  Context now includes:                                      │
+    │  [                                                          │
+    │    {author: "user", content: "@architect help", ...},       │
+    │    {author: "architect", content: "I recommend...", ...},   │
+    │    {author: "developer", content: "I can implement...", ...}│
+    │  ]                                                          │
+    │                                                             │
+    │  Ready for next message! 🎉                                 │
+    └─────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  TIMING DIAGRAM (Parallel Execution)
+═══════════════════════════════════════════════════════════════════════════════
+
+Time →
+0s    User sends message
+      │
+0.1s  Message parsed, mentions extracted
+      │
+0.2s  Session retrieved, context built
+      │
+0.3s  ┌─────────────────────┬─────────────────────┐
+      │  @architect starts  │  @developer starts  │
+      │                     │                     │
+1.0s  │  LLM processing...  │  LLM processing...  │
+2.0s  │  LLM processing...  │  LLM processing...  │
+3.0s  │  Response ready ✓   │  Response ready ✓   │
+      │                     │                     │
+3.1s  │  Format & send      │  Format & send      │
+      └─────────────────────┴─────────────────────┘
+      │
+3.2s  User sees both responses!
+
+Total time: ~3.2 seconds (parallel)
+vs ~6.2 seconds if sequential
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  DATA FLOW
+═══════════════════════════════════════════════════════════════════════════════
+
+User Message
+    │
+    ├─→ TelegramChannel
+    │       │
+    │       ├─→ extractMentions() → ["architect", "developer"]
+    │       │
+    │       └─→ handleCollaborativeMessage()
+    │               │
+    │               ├─→ CollaborativeChatManager
+    │               │       │
+    │               │       └─→ Session (abc123)
+    │               │               │
+    │               │               └─→ Context: [msg1, msg2, ...]
+    │               │
+    │               ├─→ Get TeamManager
+    │               │
+    │               └─→ For each mention (parallel):
+    │                       │
+    │                       ├─→ Build prompt with context
+    │                       │
+    │                       ├─→ TeamManager.ExecuteTaskWithRole()
+    │                       │       │
+    │                       │       └─→ CoordinatorAgent
+    │                       │               │
+    │                       │               └─→ DirectAgentExecutor
+    │                       │                       │
+    │                       │                       └─→ AgentLoop
+    │                       │                               │
+    │                       │                               └─→ LLM API
+    │                       │                                       │
+    │                       │                                       └─→ Response
+    │                       │
+    │                       ├─→ Format: [abc123] 🏗️ ARCHITECT: ...
+    │                       │
+    │                       └─→ Send to Telegram
+    │
+    └─→ User receives responses
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  KEY COMPONENTS
+═══════════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Gateway (cmd/picoclaw/internal/gateway/helpers.go)                         │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  1. Create AgentLoop                                                 │   │
+│  │  2. Create TeamManager                                               │   │
+│  │  3. Create ChannelManager                                            │   │
+│  │  4. Inject: ChannelManager.SetTeamManager(teamManager)              │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  ChannelManager (pkg/channels/manager.go)                                   │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  - Holds TeamManager reference                                       │   │
+│  │  - Provides GetTeamManager() interface                              │   │
+│  │  - Manages all channels (Telegram, Discord, etc.)                   │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  TelegramChannel (pkg/channels/telegram/telegram.go)                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  - handleMessage(): Entry point                                      │   │
+│  │  - extractMentions(): Parse @mentions                                │   │
+│  │  - handleCollaborativeMessage(): Main logic                          │   │
+│  │  - CollaborativeChatManager: Session management                      │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  CollaborativeChatManager (pkg/channels/telegram/collaborative_chat.go)     │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  - Sessions: map[chatID]*Session                                     │   │
+│  │  - GetOrCreateSession(): Session management                          │   │
+│  │  - Session.AddMessage(): Context management                          │   │
+│  │  - Session.GetContextAsString(): Format for LLM                      │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  TeamManager (pkg/team/manager.go)                                          │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  - ExecuteTaskWithRole(): Execute agent with role                    │   │
+│  │  - Teams: map[teamID]*Team                                           │   │
+│  │  - AgentExecutor: Run agents                                         │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  END OF FLOW DIAGRAM
+═══════════════════════════════════════════════════════════════════════════════

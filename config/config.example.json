@@ -54,7 +54,18 @@
       "allow_from": [
         "YOUR_USER_ID"
       ],
-      "reasoning_channel_id": ""
+      "reasoning_channel_id": "",
+      "collaborative_chat": {
+        "enabled": false,
+        "default_team_id": "dev-team",
+        "max_context_length": 50,
+        "role_map": {
+          "architect": "architect",
+          "developer": "developer",
+          "tester": "tester",
+          "manager": "manager"
+        }
+      }
     },
     "discord": {
       "enabled": false,

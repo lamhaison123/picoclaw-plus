@@ -79,6 +79,7 @@ type Manager struct {
 	bus           *bus.MessageBus
 	config        *config.Config
 	mediaStore    media.MediaStore
+	teamManager   TeamManager // Interface for team management
 	dispatchTask  *asyncTask
 	mux           *http.ServeMux
 	httpServer    *http.Server
@@ -827,4 +828,24 @@ func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, conten
 	// Fallback: direct send (should not happen)
 	channel, _ := m.channels[channelName]
 	return channel.Send(ctx, msg)
+}
+
+// TeamManager interface for collaborative chat features
+// This is a minimal interface to avoid circular dependencies with pkg/team
+type TeamManager interface {
+	ExecuteTaskWithRole(ctx context.Context, teamID string, taskDescription string, requiredRole string) (any, error)
+}
+
+// SetTeamManager sets the team manager for collaborative chat features
+func (m *Manager) SetTeamManager(tm TeamManager) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.teamManager = tm
+}
+
+// GetTeamManager returns the team manager
+func (m *Manager) GetTeamManager() TeamManager {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.teamManager
 }

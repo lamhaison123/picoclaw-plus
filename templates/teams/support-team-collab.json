@@ -1,0 +1,52 @@
+{
+  "team_id": "support-team",
+  "name": "Customer Support Team",
+  "description": "Collaborative customer support team for handling inquiries",
+  "pattern": "hierarchical",
+  "roles": [
+    {
+      "name": "support",
+      "description": "First-line support agent - handles general inquiries",
+      "capabilities": [
+        "customer_service",
+        "troubleshooting",
+        "documentation_lookup",
+        "ticket_management"
+      ],
+      "model": "claude-3-5-sonnet-20241022",
+      "tools": ["file_read", "web_search"]
+    },
+    {
+      "name": "technical",
+      "description": "Technical support specialist - handles complex technical issues",
+      "capabilities": [
+        "technical_troubleshooting",
+        "system_analysis",
+        "bug_investigation",
+        "solution_implementation"
+      ],
+      "model": "claude-3-5-sonnet-20241022",
+      "tools": ["file_read", "file_write", "exec_safe"]
+    },
+    {
+      "name": "manager",
+      "description": "Support manager - escalation point and decision maker",
+      "capabilities": [
+        "escalation_handling",
+        "decision_making",
+        "customer_relations",
+        "team_coordination"
+      ],
+      "model": "claude-3-5-sonnet-20241022",
+      "tools": ["file_read", "file_write"]
+    }
+  ],
+  "coordinator": {
+    "role": "manager"
+  },
+  "settings": {
+    "max_delegation_depth": 3,
+    "agent_timeout_seconds": 300,
+    "enable_consensus": false
+  }
+}

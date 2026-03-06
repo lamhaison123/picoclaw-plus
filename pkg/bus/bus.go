@@ -31,12 +31,14 @@ func NewMessageBus() *MessageBus {
 }
 
 func (mb *MessageBus) PublishInbound(ctx context.Context, msg InboundMessage) error {
+	// Check closed first with atomic load
 	if mb.closed.Load() {
 		return ErrBusClosed
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	// Use select with done channel to avoid TOCTOU race
 	select {
 	case mb.inbound <- msg:
 		return nil
@@ -59,12 +61,14 @@ func (mb *MessageBus) ConsumeInbound(ctx context.Context) (InboundMessage, bool)
 }
 
 func (mb *MessageBus) PublishOutbound(ctx context.Context, msg OutboundMessage) error {
+	// Check closed first with atomic load
 	if mb.closed.Load() {
 		return ErrBusClosed
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	// Use select with done channel to avoid TOCTOU race
 	select {
 	case mb.outbound <- msg:
 		return nil
@@ -87,12 +91,14 @@ func (mb *MessageBus) SubscribeOutbound(ctx context.Context) (OutboundMessage, b
 }
 
 func (mb *MessageBus) PublishOutboundMedia(ctx context.Context, msg OutboundMediaMessage) error {
+	// Check closed first with atomic load
 	if mb.closed.Load() {
 		return ErrBusClosed
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	// Use select with done channel to avoid TOCTOU race
 	select {
 	case mb.outboundMedia <- msg:
 		return nil
@@ -121,33 +127,40 @@ func (mb *MessageBus) Close() {
 		// Drain buffered channels so messages aren't silently lost.
 		// Channels are NOT closed to avoid send-on-closed panics from concurrent publishers.
 		drained := 0
+
+		// Drain inbound
 		for {
 			select {
 			case <-mb.inbound:
 				drained++
 			default:
-				goto doneInbound
+				break
 			}
+			break
 		}
-	doneInbound:
+
+		// Drain outbound
 		for {
 			select {
 			case <-mb.outbound:
 				drained++
 			default:
-				goto doneOutbound
+				break
 			}
+			break
 		}
-	doneOutbound:
+
+		// Drain outbound media
 		for {
 			select {
 			case <-mb.outboundMedia:
 				drained++
 			default:
-				goto doneMedia
+				break
 			}
+			break
 		}
-	doneMedia:
+
 		if drained > 0 {
 			logger.DebugCF("bus", "Drained buffered messages during close", map[string]any{
 				"count": drained,

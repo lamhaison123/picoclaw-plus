@@ -745,8 +745,10 @@ type CronConfig struct {
 }
 
 type ExecConfig struct {
-	EnableDenyPatterns bool     `json:"enable_deny_patterns"`
-	CustomDenyPatterns []string `json:"custom_deny_patterns"`
+	EnableDenyPatterns  bool     `json:"enable_deny_patterns"`
+	CustomDenyPatterns  []string `json:"custom_deny_patterns"`
+	CustomAllowPatterns []string `json:"custom_allow_patterns"`
+	SafetyLevel         string   `json:"safety_level"`
 }
 
 func (c *OpenClawConfig) convertChannels(warnings *[]string) ChannelsConfig {
@@ -1067,8 +1069,10 @@ func (c ToolsConfig) ToStandardTools() config.ToolsConfig {
 			ExecTimeoutMinutes: c.Cron.ExecTimeoutMinutes,
 		},
 		Exec: config.ExecConfig{
-			EnableDenyPatterns: c.Exec.EnableDenyPatterns,
-			CustomDenyPatterns: c.Exec.CustomDenyPatterns,
+			EnableDenyPatterns:  c.Exec.EnableDenyPatterns,
+			CustomDenyPatterns:  c.Exec.CustomDenyPatterns,
+			CustomAllowPatterns: c.Exec.CustomAllowPatterns,
+			SafetyLevel:         c.Exec.SafetyLevel,
 		},
 	}
 }

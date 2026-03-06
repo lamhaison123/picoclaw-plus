@@ -269,7 +269,14 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 				response, err := al.processMessage(ctx, msg)
 				if err != nil {
+					// Wrap error properly to preserve context
 					response = fmt.Sprintf("Error processing message: %v", err)
+					logger.ErrorCF("agent", "Message processing failed",
+						map[string]any{
+							"channel": msg.Channel,
+							"chat_id": msg.ChatID,
+							"error":   err.Error(),
+						})
 				}
 
 				if response != "" {
@@ -332,6 +339,11 @@ func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 // SetMediaStore injects a MediaStore for media lifecycle management.
 func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
 	al.mediaStore = s
+}
+
+// GetRegistry returns the agent registry
+func (al *AgentLoop) GetRegistry() *AgentRegistry {
+	return al.registry
 }
 
 // inferMediaType determines the media type ("image", "audio", "video", "file")
@@ -402,6 +414,42 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 	}
 
 	return al.processMessage(ctx, msg)
+}
+
+// ProcessWithAgent processes a message with a specific agent ID
+func (al *AgentLoop) ProcessWithAgent(
+	ctx context.Context,
+	agentID, content, sessionKey, channel, chatID string,
+) (string, error) {
+	// Get the specific agent
+	agent, ok := al.registry.GetAgent(agentID)
+	if !ok {
+		return "", fmt.Errorf("agent not found: %s", agentID)
+	}
+
+	// Build session key with agent prefix if not already set
+	if sessionKey == "" || !strings.HasPrefix(sessionKey, "agent:") {
+		sessionKey = fmt.Sprintf("agent:%s:%s", agentID, sessionKey)
+	}
+
+	logger.InfoCF("agent", "Processing with specific agent",
+		map[string]any{
+			"agent_id":    agentID,
+			"session_key": sessionKey,
+			"channel":     channel,
+			"chat_id":     chatID,
+		})
+
+	// Run agent loop directly with the specified agent
+	return al.runAgentLoop(ctx, agent, processOptions{
+		SessionKey:      sessionKey,
+		Channel:         channel,
+		ChatID:          chatID,
+		UserMessage:     content,
+		DefaultResponse: defaultResponse,
+		EnableSummary:   true,
+		SendResponse:    false,
+	})
 }
 
 // ProcessHeartbeat processes a heartbeat request without session history.
@@ -623,6 +671,11 @@ func (al *AgentLoop) runAgentLoop(
 		return "", err
 	}
 
+	// Check if context was cancelled during LLM iteration
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+
 	// If last tool had ForUser content and we already sent it, we might not need to send final response
 	// This is controlled by the tool's Silent flag and ForUser content
 
@@ -635,13 +688,13 @@ func (al *AgentLoop) runAgentLoop(
 	agent.Sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
 	agent.Sessions.Save(opts.SessionKey)
 
-	// 7. Optional: summarization
-	if opts.EnableSummary {
+	// 7. Optional: summarization (skip if context cancelled)
+	if opts.EnableSummary && ctx.Err() == nil {
 		al.maybeSummarize(agent, opts.SessionKey, opts.Channel, opts.ChatID)
 	}
 
-	// 8. Optional: send response via bus
-	if opts.SendResponse {
+	// 8. Optional: send response via bus (skip if context cancelled)
+	if opts.SendResponse && ctx.Err() == nil {
 		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 			Channel: opts.Channel,
 			ChatID:  opts.ChatID,
@@ -680,8 +733,7 @@ func (al *AgentLoop) handleReasoning(
 		return
 	}
 
-	// Check context cancellation before attempting to publish,
-	// since PublishOutbound's select may race between send and ctx.Done().
+	// Check parent context cancellation before attempting to publish
 	if ctx.Err() != nil {
 		return
 	}
@@ -689,33 +741,46 @@ func (al *AgentLoop) handleReasoning(
 	// Use a short timeout so the goroutine does not block indefinitely when
 	// the outbound bus is full.  Reasoning output is best-effort; dropping it
 	// is acceptable to avoid goroutine accumulation.
-	pubCtx, pubCancel := context.WithTimeout(ctx, 5*time.Second)
-	defer pubCancel()
+	// Run in goroutine with tracking to prevent accumulation
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.ErrorCF("agent", "Panic in reasoning handler",
+					map[string]any{
+						"channel": channelName,
+						"panic":   r,
+					})
+			}
+		}()
 
-	if err := al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
-		Channel: channelName,
-		ChatID:  channelID,
-		Content: reasoningContent,
-	}); err != nil {
-		// Treat context.DeadlineExceeded / context.Canceled as expected
-		// (bus full under load, or parent canceled).  Check the error
-		// itself rather than ctx.Err(), because pubCtx may time out
-		// (5 s) while the parent ctx is still active.
-		// Also treat ErrBusClosed as expected — it occurs during normal
-		// shutdown when the bus is closed before all goroutines finish.
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) ||
-			errors.Is(err, bus.ErrBusClosed) {
-			logger.DebugCF("agent", "Reasoning publish skipped (timeout/cancel)", map[string]any{
-				"channel": channelName,
-				"error":   err.Error(),
-			})
-		} else {
-			logger.WarnCF("agent", "Failed to publish reasoning (best-effort)", map[string]any{
-				"channel": channelName,
-				"error":   err.Error(),
-			})
+		pubCtx, pubCancel := context.WithTimeout(ctx, 5*time.Second)
+		defer pubCancel()
+
+		if err := al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
+			Channel: channelName,
+			ChatID:  channelID,
+			Content: reasoningContent,
+		}); err != nil {
+			// Treat context.DeadlineExceeded / context.Canceled as expected
+			// (bus full under load, or parent canceled).  Check the error
+			// itself rather than ctx.Err(), because pubCtx may time out
+			// (5 s) while the parent ctx is still active.
+			// Also treat ErrBusClosed as expected — it occurs during normal
+			// shutdown when the bus is closed before all goroutines finish.
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) ||
+				errors.Is(err, bus.ErrBusClosed) {
+				logger.DebugCF("agent", "Reasoning publish skipped (timeout/cancel)", map[string]any{
+					"channel": channelName,
+					"error":   err.Error(),
+				})
+			} else {
+				logger.WarnCF("agent", "Failed to publish reasoning (best-effort)", map[string]any{
+					"channel": channelName,
+					"error":   err.Error(),
+				})
+			}
 		}
-	}
+	}()
 }
 
 // runLLMIteration executes the LLM call loop with tool handling.
@@ -1087,7 +1152,19 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 		summarizeKey := agent.ID + ":" + sessionKey
 		if _, loading := al.summarizing.LoadOrStore(summarizeKey, true); !loading {
 			go func() {
-				defer al.summarizing.Delete(summarizeKey)
+				defer func() {
+					// Always clean up, even if panic occurs
+					al.summarizing.Delete(summarizeKey)
+					// Recover from panic to prevent goroutine crash
+					if r := recover(); r != nil {
+						logger.ErrorCF("agent", "Panic in summarization goroutine",
+							map[string]any{
+								"agent_id":    agent.ID,
+								"session_key": sessionKey,
+								"panic":       r,
+							})
+					}
+				}()
 				logger.Debug("Memory threshold reached. Optimizing conversation history...")
 				al.summarizeSession(agent, sessionKey)
 			}()

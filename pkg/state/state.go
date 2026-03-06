@@ -76,15 +76,17 @@ func NewManager(workspace string) *Manager {
 // This method uses a temp file + rename pattern for atomic writes,
 // ensuring that the state file is never corrupted even if the process crashes.
 func (sm *Manager) SetLastChannel(channel string) error {
+	// Update state under lock
 	sm.mu.Lock()
-	defer sm.mu.Unlock()
-
-	// Update state
 	sm.state.LastChannel = channel
 	sm.state.Timestamp = time.Now()
 
-	// Atomic save using temp file + rename
-	if err := sm.saveAtomic(); err != nil {
+	// Create snapshot for saving (to minimize lock time)
+	snapshot := *sm.state
+	sm.mu.Unlock()
+
+	// Save without holding lock (file I/O can be slow)
+	if err := sm.saveAtomicSnapshot(&snapshot); err != nil {
 		return fmt.Errorf("failed to save state atomically: %w", err)
 	}
 
@@ -93,15 +95,17 @@ func (sm *Manager) SetLastChannel(channel string) error {
 
 // SetLastChatID atomically updates the last chat ID and saves the state.
 func (sm *Manager) SetLastChatID(chatID string) error {
+	// Update state under lock
 	sm.mu.Lock()
-	defer sm.mu.Unlock()
-
-	// Update state
 	sm.state.LastChatID = chatID
 	sm.state.Timestamp = time.Now()
 
-	// Atomic save using temp file + rename
-	if err := sm.saveAtomic(); err != nil {
+	// Create snapshot for saving (to minimize lock time)
+	snapshot := *sm.state
+	sm.mu.Unlock()
+
+	// Save without holding lock (file I/O can be slow)
+	if err := sm.saveAtomicSnapshot(&snapshot); err != nil {
 		return fmt.Errorf("failed to save state atomically: %w", err)
 	}
 
@@ -141,6 +145,17 @@ func (sm *Manager) saveAtomic() error {
 	// Use unified atomic write utility with explicit sync for flash storage reliability.
 	// Using 0o600 (owner read/write only) for secure default permissions.
 	data, err := json.MarshalIndent(sm.state, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal state: %w", err)
+	}
+
+	return fileutil.WriteFileAtomic(sm.stateFile, data, 0o600)
+}
+
+// saveAtomicSnapshot saves a state snapshot to disk atomically without holding lock.
+// This is used to minimize lock hold time during I/O operations.
+func (sm *Manager) saveAtomicSnapshot(snapshot *State) error {
+	data, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal state: %w", err)
 	}

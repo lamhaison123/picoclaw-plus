@@ -180,12 +180,12 @@ type AgentDefaults struct {
 	MaxTokens                 int      `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
 	Temperature               *float64 `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations         int      `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
-	MaxMediaSize              int      `json:"max_media_size,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_MAX_MEDIA_SIZE"`
+	MaxMediaSize              int64    `json:"max_media_size,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_MAX_MEDIA_SIZE"`
 }
 
 const DefaultMaxMediaSize = 20 * 1024 * 1024 // 20 MB
 
-func (d *AgentDefaults) GetMaxMediaSize() int {
+func (d *AgentDefaults) GetMaxMediaSize() int64 {
 	if d.MaxMediaSize > 0 {
 		return d.MaxMediaSize
 	}
@@ -245,15 +245,32 @@ type WhatsAppConfig struct {
 }
 
 type TelegramConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
-	Token              string              `json:"token"                   env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
-	BaseURL            string              `json:"base_url"                env:"PICOCLAW_CHANNELS_TELEGRAM_BASE_URL"`
-	Proxy              string              `json:"proxy"                   env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	Typing             TypingConfig        `json:"typing,omitempty"`
-	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_TELEGRAM_REASONING_CHANNEL_ID"`
+	Enabled            bool                    `json:"enabled"                 env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
+	Token              string                  `json:"token"                   env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
+	BaseURL            string                  `json:"base_url"                env:"PICOCLAW_CHANNELS_TELEGRAM_BASE_URL"`
+	Proxy              string                  `json:"proxy"                   env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
+	AllowFrom          FlexibleStringSlice     `json:"allow_from"              env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
+	GroupTrigger       GroupTriggerConfig      `json:"group_trigger,omitempty"`
+	Typing             TypingConfig            `json:"typing,omitempty"`
+	Placeholder        PlaceholderConfig       `json:"placeholder,omitempty"`
+	ReasoningChannelID string                  `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_TELEGRAM_REASONING_CHANNEL_ID"`
+	CollaborativeChat  CollaborativeChatConfig `json:"collaborative_chat,omitempty"`
+}
+
+// CollaborativeChatConfig configures collaborative multi-agent chat
+type CollaborativeChatConfig struct {
+	Enabled          bool              `json:"enabled"`
+	DefaultTeamID    string            `json:"default_team_id"`
+	RoleMap          map[string]string `json:"role_map,omitempty"` // mention -> role name
+	SessionPrefix    string            `json:"session_prefix,omitempty"`
+	MaxContextLength int               `json:"max_context_length,omitempty"`
+	AutoJoinRules    []AutoJoinRule    `json:"auto_join_rules,omitempty"`
+}
+
+// AutoJoinRule defines when an agent should automatically join a conversation
+type AutoJoinRule struct {
+	Role     string   `json:"role"`
+	Keywords []string `json:"keywords"`
 }
 
 type FeishuConfig struct {
@@ -563,6 +580,7 @@ type ExecConfig struct {
 	EnableDenyPatterns  bool     `json:"enable_deny_patterns"  env:"PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS"`
 	CustomDenyPatterns  []string `json:"custom_deny_patterns"  env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"`
 	CustomAllowPatterns []string `json:"custom_allow_patterns" env:"PICOCLAW_TOOLS_EXEC_CUSTOM_ALLOW_PATTERNS"`
+	SafetyLevel         string   `json:"safety_level"          env:"PICOCLAW_TOOLS_EXEC_SAFETY_LEVEL"` // "strict", "moderate", "permissive", "off"
 }
 
 type MediaCleanupConfig struct {

@@ -1,0 +1,26 @@
+{
+  "comment": "Minimal configuration for collaborative chat",
+  "provider": {
+    "name": "anthropic",
+    "api_key": "YOUR_ANTHROPIC_API_KEY"
+  },
+  "agents": {
+    "defaults": {
+      "model_name": "claude-3-5-sonnet-20241022",
+      "max_tokens": 4096,
+      "temperature": 0.7
+    }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "YOUR_TELEGRAM_BOT_TOKEN",
+      "allow_from": ["YOUR_TELEGRAM_USER_ID"],
+      "collaborative_chat": {
+        "enabled": true,
+        "default_team_id": "dev-team",
+        "max_context_length": 50
+      }
+    }
+  }
+}

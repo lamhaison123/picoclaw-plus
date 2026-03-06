@@ -273,10 +273,61 @@ func (sm *SessionManager) SetHistory(key string, history []providers.Message) {
 	session, ok := sm.sessions[key]
 	if ok {
 		// Create a deep copy to strictly isolate internal state
-		// from the caller's slice.
+		// from the caller's slice, including nested slices
 		msgs := make([]providers.Message, len(history))
-		copy(msgs, history)
+		for i, msg := range history {
+			msgs[i] = deepCopyMessage(msg)
+		}
 		session.Messages = msgs
 		session.Updated = time.Now()
 	}
+}
+
+// deepCopyMessage creates a deep copy of a Message including all nested slices
+func deepCopyMessage(msg providers.Message) providers.Message {
+	copied := providers.Message{
+		Role:             msg.Role,
+		Content:          msg.Content,
+		ReasoningContent: msg.ReasoningContent,
+	}
+
+	// Deep copy ToolCalls
+	if len(msg.ToolCalls) > 0 {
+		copied.ToolCalls = make([]providers.ToolCall, len(msg.ToolCalls))
+		for i, tc := range msg.ToolCalls {
+			copied.ToolCalls[i] = providers.ToolCall{
+				ID:   tc.ID,
+				Name: tc.Name,
+				Type: tc.Type,
+			}
+			// Deep copy Arguments map
+			if tc.Arguments != nil {
+				copied.ToolCalls[i].Arguments = make(map[string]interface{})
+				for k, v := range tc.Arguments {
+					copied.ToolCalls[i].Arguments[k] = v
+				}
+			}
+			// Copy ExtraContent (shallow copy is sufficient for struct)
+			if tc.ExtraContent != nil {
+				extraCopy := *tc.ExtraContent
+				copied.ToolCalls[i].ExtraContent = &extraCopy
+			}
+			// Copy Function if present
+			if tc.Function != nil {
+				copied.ToolCalls[i].Function = &providers.FunctionCall{
+					Name:             tc.Function.Name,
+					Arguments:        tc.Function.Arguments,
+					ThoughtSignature: tc.Function.ThoughtSignature,
+				}
+			}
+		}
+	}
+
+	// Deep copy Media slice
+	if len(msg.Media) > 0 {
+		copied.Media = make([]string, len(msg.Media))
+		copy(copied.Media, msg.Media)
+	}
+
+	return copied
 }

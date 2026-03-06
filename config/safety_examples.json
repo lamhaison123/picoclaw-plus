@@ -1,0 +1,154 @@
+{
+  "_comment": "PicoClaw Safety Configuration Examples",
+  
+  "example_1_default_moderate": {
+    "description": "Default configuration - balanced protection for development",
+    "config": {
+      "tools": {
+        "exec": {
+          "safety_level": "moderate"
+        }
+      }
+    }
+  },
+
+  "example_2_strict_production": {
+    "description": "Maximum security for production environments",
+    "config": {
+      "tools": {
+        "exec": {
+          "safety_level": "strict",
+          "custom_allow_patterns": [
+            "\\bgit\\s+push\\s+origin\\s+main\\b",
+            "\\bdocker\\s+push\\s+.*\\b"
+          ]
+        }
+      }
+    }
+  },
+
+  "example_3_permissive_devops": {
+    "description": "Minimal restrictions for system administration",
+    "config": {
+      "tools": {
+        "exec": {
+          "safety_level": "permissive",
+          "custom_deny_patterns": [
+            "\\brm\\s+-rf\\s+/(bin|boot|etc|lib|sbin|usr)\\b",
+            "\\bchmod\\s+-R\\s+000\\s+/\\b"
+          ]
+        }
+      }
+    }
+  },
+
+  "example_4_development_with_docker": {
+    "description": "Development environment with Docker support",
+    "config": {
+      "tools": {
+        "exec": {
+          "safety_level": "moderate",
+          "custom_allow_patterns": [
+            "\\bdocker\\s+(run|exec|compose)\\b",
+            "\\bgit\\s+push\\s+--force\\b"
+          ]
+        }
+      }
+    }
+  },
+
+  "example_5_ci_cd_pipeline": {
+    "description": "CI/CD with specific allowed operations",
+    "config": {
+      "tools": {
+        "exec": {
+          "safety_level": "strict",
+          "custom_allow_patterns": [
+            "\\bgit\\s+push\\b",
+            "\\bgit\\s+tag\\b",
+            "\\bdocker\\s+build\\b",
+            "\\bdocker\\s+push\\b",
+            "\\bnpm\\s+publish\\b"
+          ]
+        }
+      }
+    }
+  },
+
+  "example_6_testing_environment": {
+    "description": "Testing with safety off (use with caution)",
+    "config": {
+      "tools": {
+        "exec": {
+          "safety_level": "off"
+        }
+      }
+    },
+    "warning": "⚠️ Only use 'off' mode in isolated testing environments!"
+  },
+
+  "example_7_custom_restrictions": {
+    "description": "Moderate mode with additional custom restrictions",
+    "config": {
+      "tools": {
+        "exec": {
+          "safety_level": "moderate",
+          "custom_deny_patterns": [
+            "\\bgit\\s+push\\s+--force\\b",
+            "\\brm\\s+-rf\\s+node_modules\\b",
+            "\\bdocker\\s+system\\s+prune\\s+-a\\b"
+          ]
+        }
+      }
+    }
+  },
+
+  "example_8_workspace_restricted": {
+    "description": "Strict mode with workspace path restriction",
+    "config": {
+      "tools": {
+        "exec": {
+          "safety_level": "strict"
+        }
+      }
+    },
+    "note": "Set restrict=true when creating ExecTool to enable workspace restriction"
+  },
+
+  "example_9_legacy_migration": {
+    "description": "Migration from old enable_deny_patterns config",
+    "old_config": {
+      "tools": {
+        "exec": {
+          "enable_deny_patterns": false
+        }
+      }
+    },
+    "new_config": {
+      "tools": {
+        "exec": {
+          "safety_level": "off"
+        }
+      }
+    },
+    "note": "Old config is automatically converted but new format is recommended"
+  },
+
+  "example_10_multi_level_protection": {
+    "description": "Permissive mode with selective blocking",
+    "config": {
+      "tools": {
+        "exec": {
+          "safety_level": "permissive",
+          "custom_deny_patterns": [
+            "\\brm\\s+-rf\\s+/home/[^/]+/\\.(ssh|gnupg|config)\\b",
+            "\\bchmod\\s+[0-7]{3,4}\\s+/home/[^/]+/\\.(ssh|gnupg)\\b"
+          ],
+          "custom_allow_patterns": [
+            "\\bsudo\\s+systemctl\\s+(start|stop|restart)\\s+myapp\\b"
+          ]
+        }
+      }
+    }
+  }
+}

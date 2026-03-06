@@ -74,7 +74,7 @@ func (r *RouteResolver) ResolveRoute(input RouteInput) ResolvedRoute {
 	}
 
 	// Priority 1: Peer binding
-	if peer != nil && strings.TrimSpace(peer.ID) != "" {
+	if peer != nil && peer.Kind != "" && strings.TrimSpace(peer.ID) != "" {
 		if match := r.findPeerMatch(bindings, peer); match != nil {
 			return choose(match.AgentID, "binding.peer")
 		}
@@ -82,7 +82,7 @@ func (r *RouteResolver) ResolveRoute(input RouteInput) ResolvedRoute {
 
 	// Priority 2: Parent peer binding
 	parentPeer := input.ParentPeer
-	if parentPeer != nil && strings.TrimSpace(parentPeer.ID) != "" {
+	if parentPeer != nil && parentPeer.Kind != "" && strings.TrimSpace(parentPeer.ID) != "" {
 		if match := r.findPeerMatch(bindings, parentPeer); match != nil {
 			return choose(match.AgentID, "binding.peer.parent")
 		}

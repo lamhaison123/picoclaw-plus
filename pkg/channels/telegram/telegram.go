@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
+	"github.com/sipeed/picoclaw/pkg/collaborative"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -40,13 +42,14 @@ var (
 
 type TelegramChannel struct {
 	*channels.BaseChannel
-	bot      *telego.Bot
-	bh       *th.BotHandler
-	commands TelegramCommander
-	config   *config.Config
-	chatIDs  map[string]int64
-	ctx      context.Context
-	cancel   context.CancelFunc
+	bot         *telego.Bot
+	bh          *th.BotHandler
+	commands    TelegramCommander
+	config      *config.Config
+	chatIDs     map[string]int64
+	ctx         context.Context
+	cancel      context.CancelFunc
+	chatManager *collaborative.Manager
 }
 
 func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChannel, error) {
@@ -97,6 +100,7 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 		bot:         bot,
 		config:      cfg,
 		chatIDs:     make(map[string]int64),
+		chatManager: collaborative.NewManager(),
 	}, nil
 }
 
@@ -518,8 +522,25 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		content = "[empty message]"
 	}
 
+	// Check if collaborative chat is enabled and if message contains mentions
+	collabCfg := c.config.Channels.Telegram.CollaborativeChat
+	if collabCfg.Enabled {
+		mentions := collaborative.ExtractMentions(content)
+		if len(mentions) > 0 {
+			// Handle collaborative chat with mentions
+			return c.handleCollaborativeMessage(ctx, chatID, content, mentions, sender)
+		}
+	}
+
 	// In group chats, apply unified group trigger filtering
 	if message.Chat.Type != "private" {
+		// Check for collaborative chat commands first
+		if collabCfg.Enabled && strings.HasPrefix(content, "/") {
+			if handled := c.handleCollaborativeCommand(ctx, chatID, content); handled {
+				return nil
+			}
+		}
+
 		isMentioned := c.isBotMentioned(message)
 		if isMentioned {
 			content = c.stripBotMention(content)
@@ -766,4 +787,302 @@ func (c *TelegramChannel) stripBotMention(content string) string {
 	re := regexp.MustCompile(`(?i)@` + regexp.QuoteMeta(botUsername))
 	content = re.ReplaceAllString(content, "")
 	return strings.TrimSpace(content)
+}
+
+// Platform interface implementation for collaborative package
+
+// SendMessage implements collaborative.Platform
+func (c *TelegramChannel) SendMessage(ctx context.Context, chatID string, content string) error {
+	cid, err := parseChatID(chatID)
+	if err != nil {
+		return err
+	}
+
+	htmlContent := markdownToTelegramHTML(content)
+	tgMsg := tu.Message(tu.ID(cid), htmlContent)
+	tgMsg.ParseMode = telego.ModeHTML
+
+	if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
+		logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]any{
+			"error": err.Error(),
+		})
+		tgMsg.ParseMode = ""
+		if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// GetTeamManager implements collaborative.Platform
+func (c *TelegramChannel) GetTeamManager() collaborative.TeamManager {
+	recorder := c.GetPlaceholderRecorder()
+	if recorder == nil {
+		return nil
+	}
+
+	// Type assert to get the manager with GetTeamManager method
+	type teamManagerGetter interface {
+		GetTeamManager() channels.TeamManager
+	}
+
+	tmGetter, ok := recorder.(teamManagerGetter)
+	if !ok {
+		return nil
+	}
+
+	// Wrap channels.TeamManager to implement collaborative.TeamManager
+	tm := tmGetter.GetTeamManager()
+	if tm == nil {
+		return nil
+	}
+
+	// Try to get the actual team.TeamManager for GetTeam support
+	type actualTeamManagerGetter interface {
+		GetActualTeamManager() interface{}
+	}
+
+	var actualTM interface{}
+	if atmGetter, ok := recorder.(actualTeamManagerGetter); ok {
+		actualTM = atmGetter.GetActualTeamManager()
+	}
+
+	return &teamManagerAdapter{tm: tm, actualTM: actualTM}
+}
+
+// teamManagerAdapter adapts channels.TeamManager to collaborative.TeamManager
+type teamManagerAdapter struct {
+	tm       channels.TeamManager
+	actualTM interface{} // Actual team.TeamManager for GetTeam support
+}
+
+func (a *teamManagerAdapter) ExecuteTaskWithRole(ctx context.Context, teamID, prompt, role string) (any, error) {
+	return a.tm.ExecuteTaskWithRole(ctx, teamID, prompt, role)
+}
+
+func (a *teamManagerAdapter) GetTeam(teamID string) (any, error) {
+	// Try to use actual team manager if available
+	if a.actualTM != nil {
+		type teamGetter interface {
+			GetTeam(teamID string) (any, error)
+		}
+		if tg, ok := a.actualTM.(teamGetter); ok {
+			return tg.GetTeam(teamID)
+		}
+	}
+
+	// Fallback: return nil so collaborative package uses fallback roster
+	return nil, fmt.Errorf("GetTeam not available")
+}
+
+// GetContext implements collaborative.Platform
+func (c *TelegramChannel) GetContext() context.Context {
+	return c.ctx
+}
+
+// handleCollaborativeMessage handles messages with @mentions for collaborative chat
+func (c *TelegramChannel) handleCollaborativeMessage(ctx context.Context, chatID int64, content string, mentions []string, sender bus.SenderInfo) error {
+	collabCfg := c.config.Channels.Telegram.CollaborativeChat
+	teamID := collabCfg.DefaultTeamID
+
+	if teamID == "" {
+		logger.WarnC("telegram", "Collaborative chat enabled but no default_team_id configured")
+		return nil
+	}
+
+	// Delegate to collaborative manager
+	return c.chatManager.HandleMentions(
+		ctx,
+		c, // Platform interface
+		chatID,
+		teamID,
+		content,
+		mentions,
+		sender,
+		collabCfg.MaxContextLength,
+	)
+}
+
+// handleCollaborativeCommand handles special commands in collaborative chat
+func (c *TelegramChannel) handleCollaborativeCommand(ctx context.Context, chatID int64, content string) bool {
+	collabCfg := c.config.Channels.Telegram.CollaborativeChat
+	if !collabCfg.Enabled {
+		return false
+	}
+
+	// Parse command
+	parts := strings.Fields(content)
+	if len(parts) == 0 {
+		return false
+	}
+
+	command := strings.ToLower(parts[0])
+
+	switch command {
+	case "/who":
+		c.handleStatusCommand(chatID)
+		return true
+	case "/help":
+		c.handleHelpCommand(chatID)
+		return true
+	default:
+		return false
+	}
+}
+
+// handleStatusCommand shows the status of all agents in the team
+func (c *TelegramChannel) handleStatusCommand(chatID int64) {
+	collabCfg := c.config.Channels.Telegram.CollaborativeChat
+	teamID := collabCfg.DefaultTeamID
+
+	if teamID == "" {
+		msg := "⚠️ Collaborative chat not configured"
+		c.bot.SendMessage(c.ctx, tu.Message(tu.ID(chatID), msg))
+		return
+	}
+
+	var sb strings.Builder
+	sb.WriteString("🤖 Team Status\n\n")
+
+	// Get team information
+	teamManager := c.GetTeamManager()
+	if teamManager != nil {
+		if teamInfoAny, err := teamManager.GetTeam(teamID); err == nil && teamInfoAny != nil {
+			// Use reflection to extract team info
+			// Since we can't import pkg/team here (circular dependency), use interface{}
+			teamName := teamID // default
+			var roles []struct {
+				Name        string
+				Description string
+			}
+
+			// Try to extract using type assertion with anonymous struct
+			v := reflect.ValueOf(teamInfoAny)
+			if v.Kind() == reflect.Ptr {
+				v = v.Elem()
+			}
+
+			if v.Kind() == reflect.Struct {
+				// Extract Name field
+				if nameField := v.FieldByName("Name"); nameField.IsValid() && nameField.Kind() == reflect.String {
+					teamName = nameField.String()
+				}
+
+				// Extract Config.Roles
+				if configField := v.FieldByName("Config"); configField.IsValid() && !configField.IsNil() {
+					configVal := configField.Elem()
+					if rolesField := configVal.FieldByName("Roles"); rolesField.IsValid() {
+						for i := 0; i < rolesField.Len(); i++ {
+							roleVal := rolesField.Index(i)
+							var roleName, roleDesc string
+							if nameField := roleVal.FieldByName("Name"); nameField.IsValid() {
+								roleName = nameField.String()
+							}
+							if descField := roleVal.FieldByName("Description"); descField.IsValid() {
+								roleDesc = descField.String()
+							}
+							if roleName != "" {
+								roles = append(roles, struct {
+									Name        string
+									Description string
+								}{Name: roleName, Description: roleDesc})
+							}
+						}
+					}
+				}
+			}
+
+			sb.WriteString(fmt.Sprintf("**Team:** %s\n", teamName))
+			if len(roles) > 0 {
+				sb.WriteString(fmt.Sprintf("**Registered Agents:** %d\n\n", len(roles)))
+				sb.WriteString("📋 **Available Agents:**\n")
+				for _, role := range roles {
+					emoji := collaborative.GetRoleEmoji(role.Name)
+					sb.WriteString(fmt.Sprintf("  %s @%s - %s\n", emoji, role.Name, role.Description))
+				}
+				sb.WriteString("\n")
+			}
+		}
+	}
+
+	// Show session info if exists
+	session, exists := c.chatManager.GetSession(chatID)
+	if !exists {
+		sb.WriteString("💡 **No active session**\n")
+		sb.WriteString("Mention an agent to start: @developer @tester\n")
+	} else {
+		sb.WriteString(fmt.Sprintf("**Session:** %s\n", session.SessionID))
+		sb.WriteString(fmt.Sprintf("**Started:** %s\n\n",
+			session.StartTime.Format("15:04:05")))
+
+		activeAgents := session.GetActiveAgents()
+		if len(activeAgents) == 0 {
+			sb.WriteString("⚡ **Active Agents:** None yet\n")
+			sb.WriteString("Mention an agent to activate them!\n")
+		} else {
+			sb.WriteString(fmt.Sprintf("⚡ **Active Agents:** %d\n", len(activeAgents)))
+			for _, role := range activeAgents {
+				emoji := collaborative.GetRoleEmoji(role)
+				status := session.GetAgentStatus(role)
+
+				// Get agent state for more details
+				agent := session.GetAgentState(role)
+				if agent == nil {
+					continue
+				}
+
+				statusEmoji := "💤"
+				switch status {
+				case "thinking":
+					statusEmoji = "🤔"
+				case "busy":
+					statusEmoji = "⚡"
+				case "idle":
+					statusEmoji = "✅"
+				case "error":
+					statusEmoji = "❌"
+				}
+
+				timeSince := time.Since(agent.LastSeen)
+				timeStr := ""
+				if timeSince < time.Minute {
+					timeStr = "just now"
+				} else if timeSince < time.Hour {
+					timeStr = fmt.Sprintf("%dm ago", int(timeSince.Minutes()))
+				} else {
+					timeStr = fmt.Sprintf("%dh ago", int(timeSince.Hours()))
+				}
+
+				sb.WriteString(fmt.Sprintf("  %s @%s %s [%d msgs, %s]\n",
+					emoji, role, statusEmoji, agent.MessageCount, timeStr))
+			}
+
+			sb.WriteString(fmt.Sprintf("\n📊 **Context:** %d messages | **Last activity:** %s",
+				len(session.Context),
+				session.LastActivity.Format("15:04:05")))
+		}
+	}
+
+	c.bot.SendMessage(c.ctx, tu.Message(tu.ID(chatID), sb.String()))
+}
+
+// handleHelpCommand shows available commands
+func (c *TelegramChannel) handleHelpCommand(chatID int64) {
+	help := `🤖 Collaborative Chat Commands
+
+📋 Available Commands:
+  /who - Show team status and active agents
+  /help - Show this help message
+
+💬 How to Use:
+  • Mention agents: @developer @tester
+  • Agents can mention each other
+  • Full conversation context is shared
+
+🎯 Example:
+  "Hey @developer can you help @tester with this?"
+
+Available roles: @architect @developer @tester @manager`
+
+	c.bot.SendMessage(c.ctx, tu.Message(tu.ID(chatID), help))
 }

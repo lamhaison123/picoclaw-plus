@@ -35,6 +35,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/state"
+	"github.com/sipeed/picoclaw/pkg/team"
+	"github.com/sipeed/picoclaw/pkg/team/memory"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
@@ -61,6 +63,19 @@ func gatewayCmd(debug bool) error {
 
 	msgBus := bus.NewMessageBus()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+
+	// Create team manager for collaborative chat
+	registry := agentLoop.GetRegistry()
+	teamManager := team.NewTeamManager(registry, msgBus)
+	teamManager.SetProvider(provider, cfg)
+
+	// Create agent executor for team manager
+	executor := team.NewDirectAgentExecutor(agentLoop)
+	teamManager.SetAgentExecutor(executor)
+
+	// Setup team memory
+	teamMemory := memory.NewTeamMemory(cfg.WorkspacePath())
+	teamManager.SetTeamMemory(teamMemory)
 
 	// Print agent startup info
 	fmt.Println("\n📦 Agent Status:")
@@ -129,6 +144,9 @@ func gatewayCmd(debug bool) error {
 		mediaStore.Stop()
 		return fmt.Errorf("error creating channel manager: %w", err)
 	}
+
+	// Inject team manager into channel manager for collaborative chat
+	channelManager.SetTeamManager(teamManager)
 
 	// Inject channel manager and media store into agent loop
 	agentLoop.SetChannelManager(channelManager)

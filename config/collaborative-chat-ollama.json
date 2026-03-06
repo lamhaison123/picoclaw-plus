@@ -1,0 +1,39 @@
+{
+  "comment": "Collaborative chat configuration using local Ollama models",
+  "provider": {
+    "name": "ollama",
+    "base_url": "http://localhost:11434",
+    "timeout": 600
+  },
+  "agents": {
+    "defaults": {
+      "model_name": "llama3.1:8b",
+      "max_tokens": 4096,
+      "temperature": 0.7,
+      "system_prompt": "You are a helpful AI assistant working as part of a collaborative team."
+    }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "YOUR_TELEGRAM_BOT_TOKEN",
+      "allow_from": ["YOUR_TELEGRAM_USER_ID"],
+      "collaborative_chat": {
+        "enabled": true,
+        "default_team_id": "local-team",
+        "max_context_length": 30,
+        "role_map": {
+          "assistant": "assistant",
+          "coder": "coder"
+        }
+      }
+    }
+  },
+  "tools": {
+    "exec": {
+      "enabled": true,
+      "safety_level": "moderate"
+    }
+  },
+  "workspace_path": "~/.picoclaw/workspace"
+}

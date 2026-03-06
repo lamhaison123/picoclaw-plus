@@ -209,9 +209,25 @@ func (s *FileMediaStore) CleanExpired() int {
 	// Phase 2: delete files without holding the lock
 	for _, e := range expired {
 		if err := os.Remove(e.path); err != nil && !os.IsNotExist(err) {
-			logger.WarnCF("media", "cleanup: failed to remove file", map[string]any{
+			logger.ErrorCF("media", "cleanup: failed to remove file", map[string]any{
 				"path":  e.path,
 				"error": err.Error(),
+				"ref":   e.ref,
+			})
+			// Try to recover by removing from refs map if file doesn't exist
+			if os.IsNotExist(err) {
+				s.mu.Lock()
+				delete(s.refs, e.ref)
+				delete(s.refToScope, e.ref)
+				s.mu.Unlock()
+				logger.InfoCF("media", "cleanup: removed orphaned reference", map[string]any{
+					"ref": e.ref,
+				})
+			}
+		} else {
+			logger.DebugCF("media", "cleanup: removed expired file", map[string]any{
+				"path": e.path,
+				"ref":  e.ref,
 			})
 		}
 	}

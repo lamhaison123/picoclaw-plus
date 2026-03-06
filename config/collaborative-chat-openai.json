@@ -1,0 +1,35 @@
+{
+  "comment": "Collaborative chat configuration using OpenAI GPT-4",
+  "provider": {
+    "name": "openai",
+    "api_key": "YOUR_OPENAI_API_KEY",
+    "base_url": "",
+    "organization": ""
+  },
+  "agents": {
+    "defaults": {
+      "model_name": "gpt-4-turbo-preview",
+      "max_tokens": 4096,
+      "temperature": 0.7,
+      "system_prompt": "You are a helpful AI assistant working as part of a collaborative development team."
+    }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "YOUR_TELEGRAM_BOT_TOKEN",
+      "allow_from": ["YOUR_TELEGRAM_USER_ID"],
+      "collaborative_chat": {
+        "enabled": true,
+        "default_team_id": "dev-team",
+        "max_context_length": 50,
+        "role_map": {
+          "architect": "architect",
+          "developer": "developer",
+          "tester": "tester"
+        }
+      }
+    }
+  },
+  "workspace_path": "~/.picoclaw/workspace"
+}

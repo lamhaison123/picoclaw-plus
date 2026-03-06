@@ -47,6 +47,7 @@ const (
 	FailoverTimeout    FailoverReason = "timeout"
 	FailoverFormat     FailoverReason = "format"
 	FailoverOverloaded FailoverReason = "overloaded"
+	FailoverCooldown   FailoverReason = "cooldown"
 	FailoverUnknown    FailoverReason = "unknown"
 )
 

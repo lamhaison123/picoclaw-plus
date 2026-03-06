@@ -1,0 +1,39 @@
+{
+  "team_id": "irc-dev-team",
+  "name": "IRC Development Team",
+  "pattern": "parallel",
+  "roles": [
+    {
+      "name": "architect",
+      "capabilities": ["design", "architecture", "planning"],
+      "tools": ["*"],
+      "model": ""
+    },
+    {
+      "name": "developer",
+      "capabilities": ["code", "implementation", "debugging"],
+      "tools": ["*"],
+      "model": ""
+    },
+    {
+      "name": "tester",
+      "capabilities": ["testing", "qa", "validation"],
+      "tools": ["*"],
+      "model": ""
+    },
+    {
+      "name": "manager",
+      "capabilities": ["coordination", "planning", "reporting"],
+      "tools": ["*"],
+      "model": ""
+    }
+  ],
+  "coordinator": {
+    "role": "manager"
+  },
+  "settings": {
+    "max_delegation_depth": 3,
+    "task_timeout": 120,
+    "consensus_timeout": 60
+  }
+}
