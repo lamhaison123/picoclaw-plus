@@ -1,0 +1,79 @@
+{
+  "id": "team-5",
+  "name": "Test Team",
+  "pattern": "sequential",
+  "status": "active",
+  "coordinator_id": "team-5-researcher",
+  "created_at": "2026-03-07T16:50:33.8784108+07:00",
+  "config": {
+    "team_id": "team-5",
+    "name": "Test Team",
+    "description": "A test team",
+    "pattern": "sequential",
+    "roles": [
+      {
+        "name": "researcher",
+        "description": "Research role",
+        "capabilities": [
+          "web_search",
+          "document_analysis"
+        ],
+        "tools": [
+          "webSearch",
+          "webFetch",
+          "readFile"
+        ],
+        "model": "gpt-4o"
+      },
+      {
+        "name": "coder",
+        "description": "Coding role",
+        "capabilities": [
+          "code_generation",
+          "testing"
+        ],
+        "tools": [
+          "readCode",
+          "editCode",
+          "fsWrite"
+        ],
+        "model": "claude-sonnet-4"
+      }
+    ],
+    "coordinator": {
+      "role": "researcher",
+      "agent_id": ""
+    },
+    "settings": {
+      "max_delegation_depth": 5,
+      "agent_timeout_seconds": 30,
+      "failure_threshold": 3,
+      "consensus_timeout_seconds": 60
+    }
+  },
+  "shared_context": {},
+  "agents": {
+    "team-5-coder": {
+      "AgentID": "team-5-coder",
+      "Role": "coder",
+      "Capabilities": [
+        "code_generation",
+        "testing"
+      ],
+      "Status": "idle",
+      "FailureCount": 0,
+      "LastActive": "2026-03-07T16:50:33.8784108+07:00"
+    },
+    "team-5-researcher": {
+      "AgentID": "team-5-researcher",
+      "Role": "researcher",
+      "Capabilities": [
+        "web_search",
+        "document_analysis"
+      ],
+      "Status": "idle",
+      "FailureCount": 0,
+      "LastActive": "2026-03-07T16:50:33.8784108+07:00"
+    }
+  }
+}

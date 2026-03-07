@@ -1,0 +1,65 @@
+{
+  "comment": "Configuration with embedded team definition (no separate team file needed)",
+  "provider": {
+    "name": "anthropic",
+    "api_key": "YOUR_ANTHROPIC_API_KEY"
+  },
+  "agents": {
+    "defaults": {
+      "model_name": "claude-3-5-sonnet-20241022",
+      "max_tokens": 4096,
+      "temperature": 0.7
+    }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "YOUR_TELEGRAM_BOT_TOKEN",
+      "allow_from": ["YOUR_TELEGRAM_USER_ID"],
+      "collaborative_chat": {
+        "enabled": true,
+        "default_team_id": "embedded-team",
+        "max_context_length": 50
+      }
+    }
+  },
+  "teams": [
+    {
+      "team_id": "embedded-team",
+      "name": "Embedded Development Team",
+      "description": "Team configuration embedded directly in config.json",
+      "pattern": "parallel",
+      "roles": [
+        {
+          "name": "architect",
+          "description": "System architect and designer",
+          "capabilities": ["design", "architecture", "planning"],
+          "model": "claude-3-5-sonnet-20241022",
+          "tools": ["*"]
+        },
+        {
+          "name": "developer",
+          "description": "Software developer",
+          "capabilities": ["coding", "implementation", "debugging"],
+          "model": "claude-3-5-sonnet-20241022",
+          "tools": ["*"]
+        },
+        {
+          "name": "tester",
+          "description": "QA and testing specialist",
+          "capabilities": ["testing", "qa", "validation"],
+          "model": "claude-3-5-sonnet-20241022",
+          "tools": ["*"]
+        }
+      ],
+      "coordinator": {
+        "role": "architect"
+      },
+      "settings": {
+        "max_delegation_depth": 3,
+        "agent_timeout_seconds": 300
+      }
+    }
+  ],
+  "workspace_path": "~/.picoclaw/workspace"
+}

@@ -1,0 +1,83 @@
+{
+  "comment": "Full configuration example for collaborative chat with all options",
+  "provider": {
+    "name": "anthropic",
+    "api_key": "YOUR_ANTHROPIC_API_KEY",
+    "base_url": "",
+    "timeout": 300
+  },
+  "agents": {
+    "defaults": {
+      "model_name": "claude-3-5-sonnet-20241022",
+      "max_tokens": 4096,
+      "temperature": 0.7,
+      "system_prompt": "You are a helpful AI assistant working as part of a collaborative team.",
+      "restrict_to_workspace": true
+    }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "YOUR_TELEGRAM_BOT_TOKEN",
+      "base_url": "",
+      "proxy": "",
+      "allow_from": [
+        "123456789",
+        "987654321"
+      ],
+      "group_trigger": {
+        "mention_only": false,
+        "keywords": ["help", "assist"]
+      },
+      "reasoning_channel_id": "",
+      "placeholder": {
+        "enabled": true,
+        "text": "Thinking... 💭"
+      },
+      "collaborative_chat": {
+        "enabled": true,
+        "default_team_id": "dev-team",
+        "max_context_length": 50,
+        "role_map": {
+          "arch": "architect",
+          "dev": "developer",
+          "test": "tester",
+          "pm": "manager",
+          "ops": "devops",
+          "design": "designer"
+        },
+        "session_prefix": "collab",
+        "auto_join_rules": [
+          {
+            "role": "architect",
+            "keywords": ["design", "architecture", "structure", "pattern"]
+          },
+          {
+            "role": "developer",
+            "keywords": ["code", "implement", "function", "class"]
+          },
+          {
+            "role": "tester",
+            "keywords": ["test", "bug", "qa", "verify"]
+          },
+          {
+            "role": "devops",
+            "keywords": ["deploy", "docker", "ci", "cd", "pipeline"]
+          }
+        ]
+      }
+    }
+  },
+  "tools": {
+    "exec": {
+      "enabled": true,
+      "safety_level": "moderate",
+      "timeout_seconds": 300
+    },
+    "file": {
+      "enabled": true,
+      "max_file_size_mb": 10
+    }
+  },
+  "workspace_path": "~/.picoclaw/workspace"
+}

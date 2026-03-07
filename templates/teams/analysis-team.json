@@ -1,0 +1,55 @@
+{
+  "team_id": "analysis-team-${TIMESTAMP}",
+  "name": "Analysis Team",
+  "description": "A team for code analysis and optimization with hierarchical task decomposition",
+  "pattern": "hierarchical",
+  "roles": [
+    {
+      "name": "lead_analyst",
+      "description": "Lead analyst and task coordinator",
+      "capabilities": ["task_decomposition", "coordination", "high_level_analysis"],
+      "tools": ["readCode", "readFile", "grepSearch", "listDirectory"],
+      "model": "gpt-4o",
+      "max_tokens": 8000,
+      "temperature": 0.6
+    },
+    {
+      "name": "code_analyzer",
+      "description": "Code structure and quality analyzer",
+      "capabilities": ["code_analysis", "complexity_analysis", "pattern_detection"],
+      "tools": ["readCode", "grepSearch", "getDiagnostics"],
+      "model": "claude-sonnet-4",
+      "max_tokens": 6000,
+      "temperature": 0.4
+    },
+    {
+      "name": "performance_analyzer",
+      "description": "Performance and optimization analyzer",
+      "capabilities": ["performance_analysis", "bottleneck_detection", "optimization"],
+      "tools": ["readCode", "readFile", "grepSearch"],
+      "model": "gpt-4o",
+      "max_tokens": 6000,
+      "temperature": 0.5
+    },
+    {
+      "name": "security_analyzer",
+      "description": "Security and vulnerability analyzer",
+      "capabilities": ["security_analysis", "vulnerability_detection", "best_practices"],
+      "tools": ["readCode", "grepSearch", "readFile"],
+      "model": "gpt-4o",
+      "max_tokens": 6000,
+      "temperature": 0.3
+    }
+  ],
+  "coordinator": {
+    "role": "lead_analyst",
+    "agent_id": "coordinator-analysis"
+  },
+  "settings": {
+    "max_delegation_depth": 6,
+    "agent_timeout_seconds": 150,
+    "failure_threshold": 3,
+    "consensus_timeout_seconds": 120,
+    "max_spawned_agents": 8
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "team_id": "creative-team",
+  "name": "Creative Team",
+  "description": "Collaborative creative team for content creation and design",
+  "pattern": "parallel",
+  "roles": [
+    {
+      "name": "writer",
+      "description": "Content writer - creates written content",
+      "capabilities": [
+        "copywriting",
+        "storytelling",
+        "content_creation",
+        "editing"
+      ],
+      "model": "claude-3-5-sonnet-20241022",
+      "tools": ["file_read", "file_write"]
+    },
+    {
+      "name": "designer",
+      "description": "Creative designer - handles visual design concepts",
+      "capabilities": [
+        "visual_design",
+        "ui_ux",
+        "branding",
+        "layout"
+      ],
+      "model": "claude-3-5-sonnet-20241022",
+      "tools": ["file_read", "file_write"]
+    },
+    {
+      "name": "strategist",
+      "description": "Creative strategist - plans and coordinates creative direction",
+      "capabilities": [
+        "strategy",
+        "planning",
+        "brand_positioning",
+        "campaign_design"
+      ],
+      "model": "claude-3-5-sonnet-20241022",
+      "tools": ["file_read", "file_write"]
+    },
+    {
+      "name": "reviewer",
+      "description": "Content reviewer - reviews and provides feedback",
+      "capabilities": [
+        "quality_assurance",
+        "feedback",
+        "editing",
+        "approval"
+      ],
+      "model": "claude-3-5-sonnet-20241022",
+      "tools": ["file_read"]
+    }
+  ],
+  "coordinator": {
+    "role": "strategist"
+  },
+  "settings": {
+    "max_delegation_depth": 2,
+    "agent_timeout_seconds": 300,
+    "enable_consensus": true,
+    "consensus_threshold": 0.75
+  }
+}

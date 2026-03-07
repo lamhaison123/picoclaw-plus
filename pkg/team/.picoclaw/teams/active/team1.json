@@ -1,0 +1,50 @@
+{
+  "id": "team1",
+  "name": "Test Team",
+  "pattern": "sequential",
+  "status": "active",
+  "coordinator_id": "",
+  "created_at": "2026-03-07T16:50:33.8912382+07:00",
+  "config": {
+    "team_id": "team1",
+    "name": "Test Team",
+    "description": "",
+    "pattern": "sequential",
+    "roles": [
+      {
+        "name": "developer",
+        "description": "",
+        "capabilities": [
+          "code"
+        ],
+        "tools": [
+          "file_*"
+        ],
+        "model": ""
+      }
+    ],
+    "coordinator": {
+      "role": "",
+      "agent_id": ""
+    },
+    "settings": {
+      "max_delegation_depth": 0,
+      "agent_timeout_seconds": 0,
+      "failure_threshold": 0,
+      "consensus_timeout_seconds": 0
+    }
+  },
+  "shared_context": {},
+  "agents": {
+    "team1-developer": {
+      "AgentID": "team1-developer",
+      "Role": "developer",
+      "Capabilities": [
+        "code"
+      ],
+      "Status": "idle",
+      "FailureCount": 0,
+      "LastActive": "2026-03-07T16:50:33.8912382+07:00"
+    }
+  }
+}

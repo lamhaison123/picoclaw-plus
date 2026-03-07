@@ -1,0 +1,52 @@
+{
+  "team_id": "research-team",
+  "name": "Research Team",
+  "description": "Collaborative research team for information gathering and analysis",
+  "pattern": "parallel",
+  "roles": [
+    {
+      "name": "researcher",
+      "description": "Information researcher - gathers and analyzes data",
+      "capabilities": [
+        "web_search",
+        "data_analysis",
+        "information_gathering",
+        "fact_checking"
+      ],
+      "model": "claude-3-5-sonnet-20241022",
+      "tools": ["web_search", "file_read", "file_write"]
+    },
+    {
+      "name": "analyst",
+      "description": "Data analyst - processes and interprets research findings",
+      "capabilities": [
+        "data_processing",
+        "statistical_analysis",
+        "pattern_recognition",
+        "reporting"
+      ],
+      "model": "claude-3-5-sonnet-20241022",
+      "tools": ["file_read", "file_write", "exec_safe"]
+    },
+    {
+      "name": "writer",
+      "description": "Technical writer - documents findings and creates reports",
+      "capabilities": [
+        "documentation",
+        "report_writing",
+        "summarization",
+        "presentation"
+      ],
+      "model": "claude-3-5-sonnet-20241022",
+      "tools": ["file_read", "file_write"]
+    }
+  ],
+  "coordinator": {
+    "role": "researcher"
+  },
+  "settings": {
+    "max_delegation_depth": 2,
+    "agent_timeout_seconds": 600,
+    "enable_consensus": false
+  }
+}

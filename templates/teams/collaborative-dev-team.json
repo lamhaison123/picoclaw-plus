@@ -1,0 +1,95 @@
+{
+  "team_id": "dev-team",
+  "name": "Collaborative Development Team",
+  "description": "Multi-agent development team for collaborative chat in Telegram",
+  "pattern": "parallel",
+  "roles": [
+    {
+      "name": "architect",
+      "description": "System architect and designer - focuses on high-level design, architecture patterns, and system structure",
+      "capabilities": [
+        "system_design",
+        "architecture",
+        "design_patterns",
+        "scalability",
+        "performance"
+      ],
+      "model": "claude-3-5-sonnet-20241022",
+      "tools": ["*"]
+    },
+    {
+      "name": "developer",
+      "description": "Software developer - implements features, writes code, and handles technical implementation",
+      "capabilities": [
+        "coding",
+        "implementation",
+        "debugging",
+        "refactoring",
+        "code_review"
+      ],
+      "model": "claude-3-5-sonnet-20241022",
+      "tools": ["*"]
+    },
+    {
+      "name": "tester",
+      "description": "QA and testing specialist - designs test cases, performs testing, and ensures quality",
+      "capabilities": [
+        "testing",
+        "qa",
+        "test_design",
+        "validation",
+        "bug_reporting"
+      ],
+      "model": "claude-3-5-sonnet-20241022",
+      "tools": ["*"]
+    },
+    {
+      "name": "manager",
+      "description": "Project manager - coordinates work, manages tasks, and handles documentation",
+      "capabilities": [
+        "planning",
+        "coordination",
+        "documentation",
+        "task_management",
+        "communication"
+      ],
+      "model": "claude-3-5-sonnet-20241022",
+      "tools": ["*"]
+    },
+    {
+      "name": "devops",
+      "description": "DevOps engineer - handles deployment, infrastructure, and operational concerns",
+      "capabilities": [
+        "deployment",
+        "infrastructure",
+        "ci_cd",
+        "monitoring",
+        "automation"
+      ],
+      "model": "claude-3-5-sonnet-20241022",
+      "tools": ["*"]
+    },
+    {
+      "name": "designer",
+      "description": "UI/UX designer - focuses on user interface, user experience, and design",
+      "capabilities": [
+        "ui_design",
+        "ux_design",
+        "user_research",
+        "prototyping",
+        "accessibility"
+      ],
+      "model": "claude-3-5-sonnet-20241022",
+      "tools": ["*"]
+    }
+  ],
+  "coordinator": {
+    "role": "manager"
+  },
+  "settings": {
+    "max_delegation_depth": 3,
+    "agent_timeout_seconds": 300,
+    "enable_consensus": false,
+    "consensus_threshold": 0.7
+  }
+}
