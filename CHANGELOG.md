@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.6] - 2026-03-07
+
+### Fixed - Critical Hotfix (Stability & Concurrency)
+- **Race Condition**: Fixed a P0 issue where multiple agents could respond to the same message under high concurrency.
+- **Atomic Idempotency**: Implemented `TryMarkDispatched()` atomic method for thread-safe message tracking.
+- **Unicode Support**: Upgraded mention parser to support international characters and emojis.
+- **Memory Leak**: Fixed cleanup logic in dispatch tracker to prevent long-term memory growth.
+- **Panic Prevention**: Added defensive nil checks for agent results.
+- **Graceful Shutdown**: Replaced blocking `time.Sleep` with context-aware patterns for immediate termination.
+
 ## [2.0.5] - 2026-03-07
 
 ### Added - Turbo Patch (High-Performance Support)
