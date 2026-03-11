@@ -44,4 +44,4 @@ coverage.out
 *.test
 
 # Vendor (if not committed)
-# /vendor/
+/vendor/
