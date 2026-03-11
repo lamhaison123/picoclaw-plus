@@ -1,0 +1,23 @@
+=== RUN   TestUpsert_IDHandling
+2026/03/10 22:19:40 WARN Unable to get server version, use default err="rpc error: code = Unavailable desc = connection error: desc = \"error reading server preface: http2: failed reading the frame payload: http2: frame too large, note that the frame header looked like an HTTP/1.1 header\"" default=Unknown
+2026/03/10 22:19:40 WARN Failed to obtain server version. Unable to check client-server compatibility. Set SkipCompatibilityCheck=true to skip version check.
+    qdrant_store_test.go:61: Failed to connect to real Qdrant at http://10.0.0.106:6333: ERR_PROVIDER_UNAVAILABLE: collection not found and failed to create: CreateCollection() failed: test_collection_1773155980892665700: rpc error: code = Unavailable desc = connection error: desc = "error reading server preface: http2: failed reading the frame payload: http2: frame too large, note that the frame header looked like an HTTP/1.1 header"
+--- FAIL: TestUpsert_IDHandling (0.00s)
+=== RUN   TestUpsert_Batching
+2026/03/10 22:19:40 WARN Unable to get server version, use default err="rpc error: code = Unavailable desc = connection error: desc = \"error reading server preface: http2: failed reading the frame payload: http2: frame too large, note that the frame header looked like an HTTP/1.1 header\"" default=Unknown
+2026/03/10 22:19:40 WARN Failed to obtain server version. Unable to check client-server compatibility. Set SkipCompatibilityCheck=true to skip version check.
+    qdrant_store_test.go:61: Failed to connect to real Qdrant at http://10.0.0.106:6333: ERR_PROVIDER_UNAVAILABLE: collection not found and failed to create: CreateCollection() failed: test_collection_1773155980897200100: rpc error: code = Unavailable desc = connection error: desc = "error reading server preface: http2: failed reading the frame payload: http2: frame too large, note that the frame header looked like an HTTP/1.1 header"
+--- FAIL: TestUpsert_Batching (0.00s)
+=== RUN   TestDelete_IDParsing
+2026/03/10 22:19:40 WARN Unable to get server version, use default err="rpc error: code = Unavailable desc = connection error: desc = \"error reading server preface: http2: failed reading the frame payload: http2: frame too large, note that the frame header looked like an HTTP/1.1 header\"" default=Unknown
+2026/03/10 22:19:40 WARN Failed to obtain server version. Unable to check client-server compatibility. Set SkipCompatibilityCheck=true to skip version check.
+    qdrant_store_test.go:61: Failed to connect to real Qdrant at http://10.0.0.106:6333: ERR_PROVIDER_UNAVAILABLE: collection not found and failed to create: CreateCollection() failed: test_collection_1773155980900494300: rpc error: code = Unavailable desc = connection error: desc = "error reading server preface: http2: failed reading the frame payload: http2: frame too large, note that the frame header looked like an HTTP/1.1 header"
+--- FAIL: TestDelete_IDParsing (0.00s)
+=== RUN   TestSearch_DimensionValidation
+2026/03/10 22:19:40 WARN Unable to get server version, use default err="rpc error: code = Unavailable desc = connection error: desc = \"error reading server preface: http2: failed reading the frame payload: http2: frame too large, note that the frame header looked like an HTTP/1.1 header\"" default=Unknown
+2026/03/10 22:19:40 WARN Failed to obtain server version. Unable to check client-server compatibility. Set SkipCompatibilityCheck=true to skip version check.
+    qdrant_store_test.go:61: Failed to connect to real Qdrant at http://10.0.0.106:6333: ERR_PROVIDER_UNAVAILABLE: collection not found and failed to create: CreateCollection() failed: test_collection_1773155980903702500: rpc error: code = Unavailable desc = connection error: desc = "error reading server preface: http2: failed reading the frame payload: http2: frame too large, note that the frame header looked like an HTTP/1.1 header"
+--- FAIL: TestSearch_DimensionValidation (0.00s)
+FAIL
+FAIL	github.com/sipeed/picoclaw/pkg/memory/vector	0.136s
+FAIL

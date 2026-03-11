@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // ImprovedMentionParser handles UTF-8 and multi-line mentions correctly
@@ -97,15 +98,7 @@ func ValidateMentionText(text string) bool {
 
 // isValidUTF8 checks if string is valid UTF-8
 func isValidUTF8(s string) bool {
-	for _, r := range s {
-		if r == unicode.ReplacementChar {
-			// Check if it's actually a replacement char or invalid UTF-8
-			if !strings.ContainsRune(s, r) {
-				return false
-			}
-		}
-	}
-	return true
+	return utf8.ValidString(s)
 }
 
 // ExtractMentionsWithContext extracts mentions with surrounding context

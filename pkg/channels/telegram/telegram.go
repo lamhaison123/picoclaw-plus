@@ -537,7 +537,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	// Check if collaborative chat is enabled and if message contains mentions
 	collabCfg := c.config.Channels.Telegram.CollaborativeChat
 	if collabCfg.Enabled {
-		mentions := collaborative.ExtractMentions(content)
+		mentions := collaborative.ExtractMentionsImproved(content)
 		if len(mentions) > 0 {
 			// Handle collaborative chat with mentions
 			return c.handleCollaborativeMessage(ctx, chatID, content, mentions, sender)

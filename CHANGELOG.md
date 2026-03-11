@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - v0.2.1 Integration (Complete - 100%)
+- **Mem0 Memory Provider**: Personalized memory integration
+  - Full MemoryProvider interface implementation
+  - Store, recall, update, delete operations
+  - Circuit breaker protection
+  - Token authentication (Mem0 specific)
+  - Support for self-hosted and cloud deployments
+  - Configurable timeouts and error handling
+  - Complete test coverage
+  - Documentation in `docs/reference/MEM0_INTEGRATION.md`
+- **MindGraph Memory Provider**: Knowledge graph memory integration
+  - Full MemoryProvider interface implementation
+  - Store, recall, update, delete operations
+  - Circuit breaker protection
+  - Bearer token authentication
+  - Support for self-hosted and cloud deployments
+  - Configurable timeouts and error handling
+  - Complete test coverage
+  - Documentation in `docs/reference/MINDGRAPH_INTEGRATION.md`
+- **New Search Providers**: Three additional search options
+  - **SearXNG**: Privacy-focused metasearch engine (self-hosted)
+  - **GLM Search**: Chinese search by Zhipu AI (智谱AI)
+  - **Exa AI**: AI-powered semantic search with autoprompt
+  - Priority chain: Perplexity > Exa > GLM > Brave > Tavily > SearXNG > DuckDuckGo
+  - Configurable via `tools.web.searxng`, `tools.web.glm`, `tools.web.exa`
+  - Environment variable support for all providers
+- **PICOCLAW_HOME Support**: Custom home directory configuration
+  - Environment variable for custom installation paths
+  - Multi-user and multi-tenant support
+  - Docker and container friendly
+  - Consistent across all components (config, auth, teams, workspaces)
+  - Fallback to ~/.picoclaw if not set
+  - Documented in .env.example
+- **Vision/Image Support**: Multi-modal AI with image understanding
+  - Streaming base64 encoding for memory efficiency
+  - OpenAI vision support (GPT-4V, GPT-4o)
+  - Anthropic vision support (Claude 3+)
+  - Automatic MIME type detection
+  - Configurable max file size (default 20MB)
+  - Data URL format with multipart content
+  - Graceful error handling
+- **Model Routing**: Complexity-based model selection for cost optimization
+  - Language-agnostic feature extraction (token estimate, code blocks, tool usage, attachments)
+  - CJK character support in token counting
+  - Three-tier routing: cheap/medium/expensive models
+  - Configurable via `routing.enabled` and `routing.tiers` in config
+  - Opt-in by default (disabled)
+  - First-iteration routing only (user messages)
+  - Detailed logging for routing decisions
+- **Extended Thinking Support**: Anthropic reasoning_content integration
+  - Extract thinking blocks from Claude responses
+  - Send to reasoning channel (like OpenAI o1 reasoning)
+  - Preserve in session history
+  - Automatic support for Claude 3.5+ models
+- **Tool Enable/Disable**: Individual flags for file, shell, web, message, spawn, team, skill, hardware tools
+- **Configurable Summarization**: Thresholds for message count and token percentage
+- **Environment Variable Configuration**: .env file support with precedence over config.json
+- **JSONL Memory Store**: Crash-safe append-only session storage with automatic migration from JSON
+
+### Changed - v0.2.1 Integration
+- **Parallel Tool Execution**: Using v0.2.1's inline implementation (removed duplicate code)
+- **Default Storage Backend**: Changed from JSON to JSONL for crash safety
+- **Configuration Structure**: Added routing config to main Config struct
+
 ## [2.0.6] - 2026-03-07
 
 ### Fixed - Critical Hotfix (Stability & Concurrency)

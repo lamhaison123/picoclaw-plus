@@ -16,14 +16,15 @@ import (
 
 // MentionRequest represents a queued mention request
 type MentionRequest struct {
-	Role       string
-	Prompt     string
-	SessionID  string
-	ChatID     int64
-	TeamID     string
-	Timestamp  time.Time
-	RetryCount int
-	Context    context.Context
+	Role        string
+	Prompt      string
+	SessionID   string
+	ChatID      int64
+	TeamID      string
+	Timestamp   time.Time
+	RetryCount  int
+	Context     context.Context
+	MentionedBy string // NEW: Who mentioned this role (for ack-loop prevention)
 
 	// Additional fields for execution
 	Platform   Platform // Platform interface for sending messages
@@ -111,12 +112,35 @@ func (mq *MentionQueue) Enqueue(req *MentionRequest) error {
 func (mq *MentionQueue) worker() {
 	defer mq.wg.Done()
 
+	// BUG FIX #16: Add timeout for graceful shutdown
+	shutdownTimeout := 30 * time.Second
+	shutdownTimer := time.NewTimer(shutdownTimeout)
+	defer shutdownTimer.Stop()
+
 	for {
 		select {
 		case <-mq.stopCh:
 			logger.InfoCF("collaborative", "Mention queue worker stopping", map[string]any{
 				"role": mq.role,
 			})
+			// Drain remaining items with timeout
+			shutdownTimer.Reset(shutdownTimeout)
+		drainLoop:
+			for {
+				select {
+				case req := <-mq.queue:
+					mq.updateQueueLength(len(mq.queue))
+					mq.processRequest(req)
+				case <-shutdownTimer.C:
+					logger.WarnCF("collaborative", "Queue worker shutdown timeout, dropping remaining items", map[string]any{
+						"role":      mq.role,
+						"remaining": len(mq.queue),
+					})
+					break drainLoop
+				default:
+					break drainLoop
+				}
+			}
 			return
 
 		case req := <-mq.queue:

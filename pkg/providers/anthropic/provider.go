@@ -133,9 +133,36 @@ func buildParams(
 					anthropic.NewUserMessage(anthropic.NewToolResultBlock(msg.ToolCallID, msg.Content, false)),
 				)
 			} else {
-				anthropicMessages = append(anthropicMessages,
-					anthropic.NewUserMessage(anthropic.NewTextBlock(msg.Content)),
-				)
+				// v0.2.1: Support vision - handle Media field
+				if len(msg.Media) > 0 {
+					// Build multipart content with text + images
+					var blocks []anthropic.ContentBlockParamUnion
+					if msg.Content != "" {
+						blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
+					}
+					for _, mediaURL := range msg.Media {
+						// Extract base64 data from data URL
+						// Format: data:image/jpeg;base64,<base64data>
+						if strings.HasPrefix(mediaURL, "data:") {
+							parts := strings.SplitN(mediaURL, ",", 2)
+							if len(parts) == 2 {
+								// Extract media type from data URL
+								mediaType := "image/jpeg" // default
+								if idx := strings.Index(parts[0], ":"); idx >= 0 {
+									if idx2 := strings.Index(parts[0], ";"); idx2 > idx {
+										mediaType = parts[0][idx+1 : idx2]
+									}
+								}
+								blocks = append(blocks, anthropic.NewImageBlockBase64(mediaType, parts[1]))
+							}
+						}
+					}
+					anthropicMessages = append(anthropicMessages, anthropic.NewUserMessage(blocks...))
+				} else {
+					anthropicMessages = append(anthropicMessages,
+						anthropic.NewUserMessage(anthropic.NewTextBlock(msg.Content)),
+					)
+				}
 			}
 		case "assistant":
 			if len(msg.ToolCalls) > 0 {
@@ -213,6 +240,7 @@ func translateTools(tools []ToolDefinition) []anthropic.ToolUnionParam {
 
 func parseResponse(resp *anthropic.Message) *LLMResponse {
 	var content strings.Builder
+	var reasoningContent strings.Builder
 	var toolCalls []ToolCall
 
 	for _, block := range resp.Content {
@@ -220,6 +248,10 @@ func parseResponse(resp *anthropic.Message) *LLMResponse {
 		case "text":
 			tb := block.AsText()
 			content.WriteString(tb.Text)
+		case "thinking":
+			// v0.2.1: Extract extended thinking content
+			tb := block.AsThinking()
+			reasoningContent.WriteString(tb.Thinking)
 		case "tool_use":
 			tu := block.AsToolUse()
 			var args map[string]any
@@ -246,9 +278,10 @@ func parseResponse(resp *anthropic.Message) *LLMResponse {
 	}
 
 	return &LLMResponse{
-		Content:      content.String(),
-		ToolCalls:    toolCalls,
-		FinishReason: finishReason,
+		Content:          content.String(),
+		ReasoningContent: reasoningContent.String(),
+		ToolCalls:        toolCalls,
+		FinishReason:     finishReason,
 		Usage: &UsageInfo{
 			PromptTokens:     int(resp.Usage.InputTokens),
 			CompletionTokens: int(resp.Usage.OutputTokens),

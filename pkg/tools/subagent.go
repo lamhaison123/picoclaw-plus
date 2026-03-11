@@ -37,6 +37,8 @@ type SubagentManager struct {
 	hasMaxTokens   bool
 	hasTemperature bool
 	nextID         int
+	shutdownCtx    context.Context
+	shutdownCancel context.CancelFunc
 }
 
 func NewSubagentManager(
@@ -44,15 +46,56 @@ func NewSubagentManager(
 	defaultModel, workspace string,
 	bus *bus.MessageBus,
 ) *SubagentManager {
-	return &SubagentManager{
-		tasks:         make(map[string]*SubagentTask),
-		provider:      provider,
-		defaultModel:  defaultModel,
-		bus:           bus,
-		workspace:     workspace,
-		tools:         NewToolRegistry(),
-		maxIterations: 10,
-		nextID:        1,
+	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
+	sm := &SubagentManager{
+		tasks:          make(map[string]*SubagentTask),
+		provider:       provider,
+		defaultModel:   defaultModel,
+		bus:            bus,
+		workspace:      workspace,
+		tools:          NewToolRegistry(),
+		maxIterations:  10,
+		nextID:         1,
+		shutdownCtx:    shutdownCtx,
+		shutdownCancel: shutdownCancel,
+	}
+
+	// Start cleanup goroutine to prevent memory leak
+	go sm.cleanupCompletedTasks(shutdownCtx)
+
+	return sm
+}
+
+// Shutdown gracefully shuts down the subagent manager
+// This method is safe to call multiple times.
+func (sm *SubagentManager) Shutdown() {
+	if sm.shutdownCancel != nil {
+		sm.shutdownCancel()
+		sm.shutdownCancel = nil // Prevent double cancellation
+	}
+}
+
+// cleanupCompletedTasks periodically removes completed tasks to prevent memory leak
+func (sm *SubagentManager) cleanupCompletedTasks(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			sm.mu.Lock()
+			now := time.Now().UnixMilli()
+			for taskID, task := range sm.tasks {
+				// Remove completed/failed/canceled tasks older than 10 minutes
+				if (task.Status == "completed" || task.Status == "failed" || task.Status == "canceled") &&
+					now-task.Created > 10*60*1000 {
+					delete(sm.tasks, taskID)
+				}
+			}
+			sm.mu.Unlock()
+		}
 	}
 }
 
@@ -104,8 +147,13 @@ func (sm *SubagentManager) Spawn(
 	}
 	sm.tasks[taskID] = subagentTask
 
-	// Start task in background with context cancellation support
-	go sm.runTask(ctx, subagentTask, callback)
+	// Start task in background with proper context propagation
+	// Create a child context that will be canceled when parent is canceled
+	taskCtx, taskCancel := context.WithCancel(ctx)
+	go func() {
+		defer taskCancel()
+		sm.runTask(taskCtx, subagentTask, callback)
+	}()
 
 	if label != "" {
 		return fmt.Sprintf("Spawned subagent '%s' for task: %s", label, task), nil
@@ -114,8 +162,11 @@ func (sm *SubagentManager) Spawn(
 }
 
 func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask, callback AsyncCallback) {
+	// Update task status with proper locking
+	sm.mu.Lock()
 	task.Status = "running"
 	task.Created = time.Now().UnixMilli()
+	sm.mu.Unlock()
 
 	// Build system prompt for subagent
 	systemPrompt := `You are a subagent. Complete the given task independently and report the result.

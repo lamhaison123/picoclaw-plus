@@ -18,13 +18,13 @@ import (
 
 // ManagerV2 manages all active collaborative chat sessions with improved mention handling
 type ManagerV2 struct {
-sessions          map[int64]*Session
-mu                sync.RWMutex
-dispatchTracker   *DispatchTracker
-queueManager      *QueueManager      // Queue manager for rate limiting and retry
-compactionManager *CompactionManager // Compaction manager for context compression
-maxMentionDepth   int                // Maximum depth for cascading mentions (default: 5)
-config            *Config            // Configuration
+	sessions          map[int64]*Session
+	mu                sync.RWMutex
+	dispatchTracker   *DispatchTracker
+	queueManager      *QueueManager      // Queue manager for rate limiting and retry
+	compactionManager *CompactionManager // Compaction manager for context compression
+	maxMentionDepth   int                // Maximum depth for cascading mentions (default: 5)
+	config            *Config            // Configuration
 }
 
 // NewManagerV2 creates a new improved collaborative chat manager with default config
@@ -51,7 +51,7 @@ func NewManagerV2WithConfig(config *Config) *ManagerV2 {
 	}
 	if config.MentionRetryBackoff == 0 {
 		config.MentionRetryBackoff = 1 * time.Second
-}
+	}
 	if config.MaxMentionDepth == 0 {
 		config.MaxMentionDepth = 20 // Increased from 3 to 20 for more flexible workflows
 	}
@@ -104,7 +104,7 @@ func NewManagerV2WithConfig(config *Config) *ManagerV2 {
 		queueManager:      NewQueueManager(config.MentionQueueSize, config.MentionRateLimit, config.MentionMaxRetries, config.MentionRetryBackoff),
 		compactionManager: compactionMgr,
 		maxMentionDepth:   config.MaxMentionDepth,
-		config:          config,
+		config:            config,
 	}
 }
 
@@ -134,6 +134,15 @@ func (m *ManagerV2) HandleMentions(
 
 	// Get or create session
 	session := m.GetOrCreateSession(chatID, teamID, maxContext)
+
+	// BUG FIX: Check if session creation failed
+	if session == nil {
+		logger.ErrorCF("collaborative", "Failed to create session", map[string]any{
+			"chat_id": chatID,
+			"team_id": teamID,
+		})
+		return fmt.Errorf("failed to create session for chat %d", chatID)
+	}
 
 	// Check mention depth to prevent infinite loops
 	if session.MentionDepth >= m.maxMentionDepth {
@@ -197,20 +206,6 @@ func (m *ManagerV2) HandleMentions(
 	return nil
 }
 
-// executeAgentAndCascade handles agent execution and recursive cascaded mentions
-func (m *ManagerV2) executeAgentAndCascade(
-	platform Platform,
-	chatID int64,
-	teamID string,
-	session *Session,
-	role string,
-	triggerContent string,
-	teamRoster string,
-	currentDepth int,
-) {
-	_ = m.executeAgentAndCascadeWithError(platform, chatID, teamID, session, role, triggerContent, teamRoster, currentDepth)
-}
-
 // executeAgentAndCascadeWithError handles agent execution and returns error for retry
 func (m *ManagerV2) executeAgentAndCascadeWithError(
 	platform Platform,
@@ -221,6 +216,7 @@ func (m *ManagerV2) executeAgentAndCascadeWithError(
 	triggerContent string,
 	teamRoster string,
 	currentDepth int,
+	mentionedBy string, // NEW: Who mentioned this role (for ack-loop prevention)
 ) error {
 	// Check if we've reached max depth before cascading
 	if currentDepth >= m.maxMentionDepth {
@@ -256,6 +252,15 @@ func (m *ManagerV2) executeAgentAndCascadeWithError(
 		"depth":               currentDepth,
 	})
 
+	// BUG FIX #8: Check context before starting cascade
+	if platform.GetContext().Err() != nil {
+		logger.WarnCF("collaborative", "Context cancelled before cascade", map[string]any{
+			"role":       role,
+			"session_id": session.SessionID,
+		})
+		return platform.GetContext().Err()
+	}
+
 	// Mark agent as in cascade
 	session.IncrementMentionDepth()
 	defer session.DecrementMentionDepth()
@@ -280,6 +285,12 @@ You are @%s. Respond to the user's message considering the conversation history 
 You can mention other team members using @role format (e.g., @architect, @developer).`,
 			contextStr, teamRoster, triggerContent, role)
 	} else {
+		// Build ack-loop prevention warning
+		ackWarning := ""
+		if mentionedBy != "" {
+			ackWarning = fmt.Sprintf("\n\nIMPORTANT: Do NOT mention @%s back immediately (they just mentioned you). Only mention them if you genuinely need their input for a NEW task.", mentionedBy)
+		}
+
 		prompt = fmt.Sprintf(`%s
 
 === Team Information ===
@@ -288,8 +299,8 @@ You can mention other team members using @role format (e.g., @architect, @develo
 You were mentioned in the conversation. Please respond if needed.
 Trigger context: %s
 
-You are @%s. You can mention other team members using @role format.`,
-			contextStr, teamRoster, triggerContent, role)
+You are @%s. You can mention other team members using @role format.%s`,
+			contextStr, teamRoster, triggerContent, role, ackWarning)
 	}
 
 	logger.DebugCF("collaborative", "Starting agent execution", map[string]any{
@@ -388,7 +399,6 @@ You are @%s. You can mention other team members using @role format.`,
 		"chat_id":    chatID,
 	})
 
-
 	// Trigger compaction if enabled and manager is available
 	if m.compactionManager != nil {
 		m.compactionManager.CompactAsync(platform.GetContext(), session)
@@ -401,12 +411,27 @@ You are @%s. You can mention other team members using @role format.`,
 	// Check if agent mentioned other agents in their response
 	mentionsInResponse := ExtractMentionsImproved(responseStr)
 	if len(mentionsInResponse) > 0 {
-		// Filter out self-mentions
+		// Filter out self-mentions AND ack-mentions (ack-loop prevention)
 		newMentions := []string{}
 		for _, mentioned := range mentionsInResponse {
-			if mentioned != role { // Don't mention self
-				newMentions = append(newMentions, mentioned)
+			// Don't mention self
+			if mentioned == role {
+				continue
 			}
+
+			// Don't mention back the person who just mentioned you (ack-loop prevention)
+			// This prevents: A mentions B → B mentions A → A mentions B → ...
+			if mentionedBy != "" && mentioned == mentionedBy {
+				logger.InfoCF("collaborative", "Filtered ack-mention to prevent loop", map[string]any{
+					"from_role":  role,
+					"to_role":    mentioned,
+					"session_id": session.SessionID,
+					"depth":      currentDepth,
+				})
+				continue
+			}
+
+			newMentions = append(newMentions, mentioned)
 		}
 
 		if len(newMentions) > 0 {
@@ -430,17 +455,7 @@ You are @%s. You can mention other team members using @role format.`,
 			})
 
 			for _, mentionedRole := range newMentions {
-				// Check for cycles in cascaded mentions
-				if session.IsAgentInCascade(mentionedRole) {
-					logger.WarnCF("collaborative", "Cycle detected in cascade", map[string]any{
-						"from_role":   role,
-						"target_role": mentionedRole,
-						"session_id":  session.SessionID,
-					})
-					continue
-				}
-
-				// Enqueue cascaded mention
+				// Enqueue cascaded mention with mentionedBy for ack-loop prevention
 				req := &MentionRequest{
 					Role:        mentionedRole,
 					Prompt:      responseStr,
@@ -453,6 +468,7 @@ You are @%s. You can mention other team members using @role format.`,
 					Session:     session,
 					TeamRoster:  teamRoster,
 					Depth:       currentDepth + 1,
+					MentionedBy: role, // NEW: Track who mentioned this role
 					ExecuteFunc: m.executeMentionRequest,
 				}
 
@@ -548,6 +564,7 @@ func (m *ManagerV2) executeMentionRequest(req *MentionRequest) error {
 		req.Prompt,
 		req.TeamRoster,
 		req.Depth,
+		req.MentionedBy, // Pass mentionedBy for ack-loop prevention
 	)
 }
 
@@ -563,21 +580,19 @@ func (m *ManagerV2) GetAllQueueMetrics() map[string]QueueMetrics {
 
 // Stop gracefully stops the manager and all queues
 func (m *ManagerV2) Stop() {
-logger.InfoC("collaborative", "Stopping ManagerV2")
-m.queueManager.Stop()
+	logger.InfoC("collaborative", "Stopping ManagerV2")
+	m.queueManager.Stop()
 
-if m.compactionManager != nil {
-logger.InfoC("collaborative", "Stopping compaction manager")
-m.compactionManager.Stop()
-}
+	if m.compactionManager != nil {
+		logger.InfoC("collaborative", "Stopping compaction manager")
+		m.compactionManager.Stop()
+	}
 }
 
 // GetCompactionManager returns the compaction manager (for testing)
 func (m *ManagerV2) GetCompactionManager() *CompactionManager {
-return m.compactionManager
+	return m.compactionManager
 }
-
-
 
 // GetEnhancedMetrics returns the enhanced metrics collector
 func (m *ManagerV2) GetEnhancedMetrics() *EnhancedMetrics {

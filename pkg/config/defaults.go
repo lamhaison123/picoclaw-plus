@@ -38,6 +38,42 @@ func DefaultConfig() *Config {
 		Bindings: []AgentBinding{},
 		Session: SessionConfig{
 			DMScope: "per-channel-peer",
+			// v0.2.1: Default summarization thresholds
+			SummarizationMessageThreshold: 20,   // Summarize after 20 messages
+			SummarizationTokenPercent:     0.75, // Summarize when 75% of max tokens used
+			// v0.2.1: Storage backend configuration
+			StorageBackend: "jsonl", // Use JSONL by default for crash safety
+			AutoMigrate:    true,    // Auto-migrate from JSON to JSONL
+		},
+		Routing: RoutingConfig{
+			Enabled: false, // Disabled by default, opt-in
+			Tiers: []ModelRoutingTier{
+				{
+					Name: "cheap",
+					Models: []string{
+						"gpt-4o-mini",
+						"claude-haiku",
+						"gemini-flash",
+						"llama-3.3-70b",
+					},
+				},
+				{
+					Name: "medium",
+					Models: []string{
+						"gpt-4o",
+						"claude-sonnet",
+						"gemini-pro",
+					},
+				},
+				{
+					Name: "expensive",
+					Models: []string{
+						"gpt-5.2",
+						"claude-opus",
+						"gemini-ultra",
+					},
+				},
+			},
 		},
 		Channels: ChannelsConfig{
 			WhatsApp: WhatsAppConfig{
@@ -319,6 +355,16 @@ func DefaultConfig() *Config {
 			Port: 18790,
 		},
 		Tools: ToolsConfig{
+			// v0.2.1: Tool enable/disable flags (all enabled by default)
+			FileToolsEnabled:     true,
+			ShellToolsEnabled:    true,
+			WebToolsEnabled:      true,
+			MessageToolEnabled:   true,
+			SpawnToolEnabled:     true,
+			TeamToolsEnabled:     true,
+			SkillToolsEnabled:    true,
+			HardwareToolsEnabled: true,
+
 			MediaCleanup: MediaCleanupConfig{
 				Enabled:  true,
 				MaxAge:   30,
@@ -370,6 +416,58 @@ func DefaultConfig() *Config {
 		Heartbeat: HeartbeatConfig{
 			Enabled:  true,
 			Interval: 30,
+		},
+		Memory: MemoryConfig{
+			Enabled: false, // Disabled by default, opt-in for v2.0.7
+			VectorStore: VectorStoreConfig{
+				Provider: "none", // "qdrant", "lancedb", "none"
+				Qdrant: QdrantConfig{
+					URL:        "http://localhost:6333",
+					APIKey:     "",
+					Collection: "picoclaw_memory",
+					Dimension:  384, // all-MiniLM-L6-v2 default
+					TimeoutMS:  800,
+				},
+				LanceDB: LanceDBConfig{
+					URL:       "http://localhost:8000",
+					Dataset:   "picoclaw",
+					TimeoutMS: 800,
+				},
+			},
+			Embedding: EmbeddingConfig{
+				Provider:  "none", // "openai", "local", "none"
+				Model:     "text-embedding-3-small",
+				Dimension: 384,
+				APIKey:    "",
+				BaseURL:   "",
+				TimeoutMS: 10000,
+			},
+			MemoryProvider: MemoryProviderConfig{
+				Provider: "none", // "mem0", "mindgraph", "sidecar", "none"
+				Sidecar: SidecarConfig{
+					Endpoint:  "http://localhost:8765",
+					TimeoutMS: 1200,
+					CircuitBreaker: CircuitBreakerConfig{
+						MaxFailures:   5,
+						ResetTimeoutS: 60,
+					},
+				},
+				Mem0: Mem0Config{
+					URL:       "http://localhost:8001",
+					APIKey:    "",
+					TimeoutMS: 1200,
+				},
+				MindGraph: MindGraphConfig{
+					URL:       "http://localhost:8002",
+					APIKey:    "",
+					TimeoutMS: 1200,
+				},
+			},
+			Cache: MemoryCacheConfig{
+				Enabled:    true,
+				MaxEntries: 1000,
+				TTLSeconds: 3600, // 1 hour
+			},
 		},
 		Devices: DevicesConfig{
 			Enabled:    false,

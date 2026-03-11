@@ -1,0 +1,33 @@
+{
+  "memory": {
+    "enabled": true,
+    "embedding": {
+      "provider": "openai",
+      "model": "text-embedding-3-small",
+      "dimension": 384,
+      "api_key": "${PICOCLAW_EMBEDDING_API_KEY}",
+      "timeout_ms": 10000
+    },
+    "vector_store": {
+      "provider": "lancedb",
+      "qdrant": {
+        "enabled": false
+      },
+      "lancedb": {
+        "enabled": true,
+        "mode": "api",
+        "url": "http://localhost:8000",
+        "dataset": "picoclaw",
+        "timeout_ms": 800
+      }
+    },
+    "memory_provider": {
+      "provider": "none"
+    },
+    "cache": {
+      "enabled": true,
+      "max_entries": 1000,
+      "ttl_seconds": 3600
+    }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "memory": {
+    "enabled": true,
+    "embedding": {
+      "provider": "openai",
+      "model": "text-embedding-3-small",
+      "dimension": 384,
+      "api_key": "${PICOCLAW_EMBEDDING_API_KEY}",
+      "base_url": "",
+      "timeout_ms": 10000
+    },
+    "vector_store": {
+      "provider": "qdrant",
+      "qdrant": {
+        "enabled": true,
+        "url": "http://localhost:6333",
+        "api_key": "",
+        "collection": "picoclaw_memory",
+        "dimension": 384,
+        "timeout_ms": 800
+      },
+      "lancedb": {
+        "enabled": false,
+        "mode": "api",
+        "url": "http://localhost:8000",
+        "path": "./data/lancedb",
+        "dataset": "picoclaw",
+        "timeout_ms": 800
+      }
+    },
+    "memory_provider": {
+      "provider": "none",
+      "sidecar": {
+        "enabled": false,
+        "endpoint": "http://localhost:8765",
+        "timeout_ms": 1200,
+        "circuit_breaker": {
+          "max_failures": 5,
+          "reset_timeout_s": 60
+        }
+      },
+      "mem0": {
+        "enabled": false,
+        "url": "http://localhost:8001",
+        "api_key": "${MEM0_API_KEY}",
+        "timeout_ms": 1200,
+        "_comment": "For cloud: https://api.mem0.ai"
+      },
+      "mindgraph": {
+        "enabled": false,
+        "url": "http://localhost:8002",
+        "api_key": "${MINDGRAPH_API_KEY}",
+        "timeout_ms": 1200,
+        "_comment": "For cloud: https://api.mindgraph.cloud"
+      }
+    },
+    "cache": {
+      "enabled": true,
+      "max_entries": 1000,
+      "ttl_seconds": 3600
+    }
+  }
+}

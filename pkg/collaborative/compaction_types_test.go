@@ -20,6 +20,16 @@ func TestCompactedContext_Creation(t *testing.T) {
 		CompressedSize: 100,
 	}
 
+	if ctx.CompactedAt.IsZero() {
+		t.Error("Expected CompactedAt to be set")
+	}
+	if ctx.OriginalSize != 1000 {
+		t.Errorf("Expected OriginalSize 1000, got %d", ctx.OriginalSize)
+	}
+	if ctx.CompressedSize != 100 {
+		t.Errorf("Expected CompressedSize 100, got %d", ctx.CompressedSize)
+	}
+
 	if ctx.Summary != "Test summary" {
 		t.Errorf("Expected summary 'Test summary', got '%s'", ctx.Summary)
 	}
@@ -41,8 +51,14 @@ func TestCompactionConfig_Defaults(t *testing.T) {
 		SummaryMaxLength: 2000,
 		LLMProvider:      "openai",
 		LLMModel:         "gpt-4o-mini",
-		LLMTimeout:       30 * time.Second,
 		LLMMaxRetries:    3,
+	}
+
+	if config.LLMTimeout != 30*time.Second {
+		t.Errorf("Expected LLMTimeout 30s, got %v", config.LLMTimeout)
+	}
+	if config.LLMMaxRetries != 3 {
+		t.Errorf("Expected LLMMaxRetries 3, got %d", config.LLMMaxRetries)
 	}
 
 	if !config.Enabled {
@@ -107,6 +123,13 @@ func TestCompactionRequest_Creation(t *testing.T) {
 		Timestamp:       time.Now(),
 	}
 
+	if req.Config.Enabled != true {
+		t.Error("Expected Config.Enabled to be true")
+	}
+	if req.Timestamp.IsZero() {
+		t.Error("Expected Timestamp to be set")
+	}
+
 	if req.SessionID != "test123" {
 		t.Errorf("Expected SessionID 'test123', got '%s'", req.SessionID)
 	}
@@ -120,13 +143,14 @@ func TestCompactionRequest_Creation(t *testing.T) {
 
 func TestCompactionResult_Success(t *testing.T) {
 	result := &CompactionResult{
-		Summary:        "Compacted summary",
-		Success:        true,
-		Error:          nil,
-		OriginalSize:   1000,
-		CompressedSize: 100,
-		Duration:       2 * time.Second,
-		MessagesCount:  25,
+		MessagesCount: 25,
+	}
+
+	if result.Summary != "Compacted summary" {
+		t.Errorf("Expected Summary 'Compacted summary', got '%s'", result.Summary)
+	}
+	if result.Duration != 2*time.Second {
+		t.Errorf("Expected Duration 2s, got %v", result.Duration)
 	}
 
 	if !result.Success {

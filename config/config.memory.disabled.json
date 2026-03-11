@@ -1,0 +1,23 @@
+{
+  "memory": {
+    "enabled": false,
+    "embedding": {
+      "provider": "none"
+    },
+    "vector_store": {
+      "provider": "none",
+      "qdrant": {
+        "enabled": false
+      },
+      "lancedb": {
+        "enabled": false
+      }
+    },
+    "memory_provider": {
+      "provider": "none"
+    },
+    "cache": {
+      "enabled": false
+    }
+  }
+}

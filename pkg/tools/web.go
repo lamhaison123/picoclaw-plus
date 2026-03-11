@@ -329,6 +329,27 @@ type PerplexitySearchProvider struct {
 	client *http.Client
 }
 
+// SearXNG is a privacy-respecting metasearch engine
+type SearXNGSearchProvider struct {
+	baseURL string
+	proxy   string
+	client  *http.Client
+}
+
+// GLM Search is a Chinese search provider by Zhipu AI (智谱AI)
+type GLMSearchProvider struct {
+	apiKey string
+	proxy  string
+	client *http.Client
+}
+
+// Exa AI is an AI-powered search engine
+type ExaSearchProvider struct {
+	apiKey string
+	proxy  string
+	client *http.Client
+}
+
 func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
 	searchURL := "https://api.perplexity.ai/chat/completions"
 
@@ -395,6 +416,255 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 	return fmt.Sprintf("Results for: %s (via Perplexity)\n%s", query, searchResp.Choices[0].Message.Content), nil
 }
 
+// SearXNG Search implementation
+func (p *SearXNGSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+	// SearXNG JSON API endpoint
+	searchURL := fmt.Sprintf("%s/search?q=%s&format=json&pageno=1",
+		strings.TrimSuffix(p.baseURL, "/"),
+		url.QueryEscape(query))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("SearXNG API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var searchResp struct {
+		Results []struct {
+			Title   string `json:"title"`
+			URL     string `json:"url"`
+			Content string `json:"content"`
+		} `json:"results"`
+	}
+
+	if err := json.Unmarshal(body, &searchResp); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(searchResp.Results) == 0 {
+		return fmt.Sprintf("No results for: %s", query), nil
+	}
+
+	var results strings.Builder
+	results.WriteString(fmt.Sprintf("Results for: %s (via SearXNG)\n\n", query))
+
+	maxCount := count
+	if len(searchResp.Results) < maxCount {
+		maxCount = len(searchResp.Results)
+	}
+
+	for i := 0; i < maxCount; i++ {
+		result := searchResp.Results[i]
+		results.WriteString(fmt.Sprintf("%d. %s\n", i+1, result.Title))
+		results.WriteString(fmt.Sprintf("   %s\n", result.URL))
+		if result.Content != "" {
+			results.WriteString(fmt.Sprintf("   %s\n", result.Content))
+		}
+		results.WriteString("\n")
+	}
+
+	return results.String(), nil
+}
+
+// GLM Search implementation (智谱AI)
+func (p *GLMSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+	searchURL := "https://open.bigmodel.cn/api/paas/v4/tools"
+
+	payload := map[string]any{
+		"tool": "web-search-pro",
+		"messages": []map[string]string{
+			{
+				"role":    "user",
+				"content": query,
+			},
+		},
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", searchURL, bytes.NewReader(payloadBytes))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("GLM Search API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var searchResp struct {
+		Choices []struct {
+			Message struct {
+				Content   string `json:"content"`
+				ToolCalls []struct {
+					SearchResult struct {
+						Title   string `json:"title"`
+						Link    string `json:"link"`
+						Content string `json:"content"`
+					} `json:"search_result"`
+				} `json:"tool_calls"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+
+	if err := json.Unmarshal(body, &searchResp); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(searchResp.Choices) == 0 {
+		return fmt.Sprintf("No results for: %s", query), nil
+	}
+
+	var results strings.Builder
+	results.WriteString(fmt.Sprintf("Results for: %s (via GLM Search)\n\n", query))
+
+	choice := searchResp.Choices[0]
+	if len(choice.Message.ToolCalls) > 0 {
+		maxCount := count
+		if len(choice.Message.ToolCalls) < maxCount {
+			maxCount = len(choice.Message.ToolCalls)
+		}
+
+		for i := 0; i < maxCount; i++ {
+			result := choice.Message.ToolCalls[i].SearchResult
+			results.WriteString(fmt.Sprintf("%d. %s\n", i+1, result.Title))
+			results.WriteString(fmt.Sprintf("   %s\n", result.Link))
+			if result.Content != "" {
+				results.WriteString(fmt.Sprintf("   %s\n", result.Content))
+			}
+			results.WriteString("\n")
+		}
+	} else if choice.Message.Content != "" {
+		results.WriteString(choice.Message.Content)
+		results.WriteString("\n")
+	}
+
+	return results.String(), nil
+}
+
+// Exa AI Search implementation
+func (p *ExaSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+	searchURL := "https://api.exa.ai/search"
+
+	payload := map[string]any{
+		"query":            query,
+		"numResults":       count,
+		"useAutoprompt":    true,
+		"type":             "auto",
+		"contents":         map[string]any{"text": true},
+		"livecrawl":        "auto",
+		"livecrawlTimeout": 5000,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", searchURL, bytes.NewReader(payloadBytes))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", p.apiKey)
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("Exa AI API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var searchResp struct {
+		Results []struct {
+			Title      string   `json:"title"`
+			URL        string   `json:"url"`
+			Text       string   `json:"text"`
+			Highlights []string `json:"highlights"`
+		} `json:"results"`
+		Autoprompt string `json:"autopromptString"`
+	}
+
+	if err := json.Unmarshal(body, &searchResp); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(searchResp.Results) == 0 {
+		return fmt.Sprintf("No results for: %s", query), nil
+	}
+
+	var results strings.Builder
+	results.WriteString(fmt.Sprintf("Results for: %s (via Exa AI)\n", query))
+	if searchResp.Autoprompt != "" {
+		results.WriteString(fmt.Sprintf("Optimized query: %s\n", searchResp.Autoprompt))
+	}
+	results.WriteString("\n")
+
+	for i, result := range searchResp.Results {
+		results.WriteString(fmt.Sprintf("%d. %s\n", i+1, result.Title))
+		results.WriteString(fmt.Sprintf("   %s\n", result.URL))
+
+		// Use highlights if available, otherwise use text excerpt
+		if len(result.Highlights) > 0 {
+			results.WriteString(fmt.Sprintf("   %s\n", result.Highlights[0]))
+		} else if result.Text != "" {
+			// Truncate text to first 200 chars
+			text := result.Text
+			if len(text) > 200 {
+				text = text[:200] + "..."
+			}
+			results.WriteString(fmt.Sprintf("   %s\n", text))
+		}
+		results.WriteString("\n")
+	}
+
+	return results.String(), nil
+}
+
 type WebSearchTool struct {
 	provider   SearchProvider
 	maxResults int
@@ -413,6 +683,15 @@ type WebSearchToolOptions struct {
 	PerplexityAPIKey     string
 	PerplexityMaxResults int
 	PerplexityEnabled    bool
+	SearXNGBaseURL       string
+	SearXNGMaxResults    int
+	SearXNGEnabled       bool
+	GLMAPIKey            string
+	GLMMaxResults        int
+	GLMEnabled           bool
+	ExaAPIKey            string
+	ExaMaxResults        int
+	ExaEnabled           bool
 	Proxy                string
 }
 
@@ -420,7 +699,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 	var provider SearchProvider
 	maxResults := 5
 
-	// Priority: Perplexity > Brave > Tavily > DuckDuckGo
+	// Priority: Perplexity > Exa > GLM > Brave > Tavily > SearXNG > DuckDuckGo
 	if opts.PerplexityEnabled && opts.PerplexityAPIKey != "" {
 		client, err := createHTTPClient(opts.Proxy, perplexityTimeout)
 		if err != nil {
@@ -429,6 +708,24 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 		provider = &PerplexitySearchProvider{apiKey: opts.PerplexityAPIKey, proxy: opts.Proxy, client: client}
 		if opts.PerplexityMaxResults > 0 {
 			maxResults = opts.PerplexityMaxResults
+		}
+	} else if opts.ExaEnabled && opts.ExaAPIKey != "" {
+		client, err := createHTTPClient(opts.Proxy, searchTimeout)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create HTTP client for Exa: %w", err)
+		}
+		provider = &ExaSearchProvider{apiKey: opts.ExaAPIKey, proxy: opts.Proxy, client: client}
+		if opts.ExaMaxResults > 0 {
+			maxResults = opts.ExaMaxResults
+		}
+	} else if opts.GLMEnabled && opts.GLMAPIKey != "" {
+		client, err := createHTTPClient(opts.Proxy, searchTimeout)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create HTTP client for GLM: %w", err)
+		}
+		provider = &GLMSearchProvider{apiKey: opts.GLMAPIKey, proxy: opts.Proxy, client: client}
+		if opts.GLMMaxResults > 0 {
+			maxResults = opts.GLMMaxResults
 		}
 	} else if opts.BraveEnabled && opts.BraveAPIKey != "" {
 		client, err := createHTTPClient(opts.Proxy, searchTimeout)
@@ -452,6 +749,15 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 		}
 		if opts.TavilyMaxResults > 0 {
 			maxResults = opts.TavilyMaxResults
+		}
+	} else if opts.SearXNGEnabled && opts.SearXNGBaseURL != "" {
+		client, err := createHTTPClient(opts.Proxy, searchTimeout)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create HTTP client for SearXNG: %w", err)
+		}
+		provider = &SearXNGSearchProvider{baseURL: opts.SearXNGBaseURL, proxy: opts.Proxy, client: client}
+		if opts.SearXNGMaxResults > 0 {
+			maxResults = opts.SearXNGMaxResults
 		}
 	} else if opts.DuckDuckGoEnabled {
 		client, err := createHTTPClient(opts.Proxy, searchTimeout)

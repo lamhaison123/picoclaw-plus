@@ -252,6 +252,10 @@ func (tm *TeamManager) getStateDir() string {
 	if tm.workspace != "" {
 		return filepath.Join(tm.workspace, "teams")
 	}
+	// v0.2.1: Use PICOCLAW_HOME if set
+	if picoclawHome := os.Getenv("PICOCLAW_HOME"); picoclawHome != "" {
+		return filepath.Join(picoclawHome, "teams")
+	}
 	// Fallback to HOME directory
 	if home := os.Getenv("HOME"); home != "" {
 		return filepath.Join(home, ".picoclaw", "teams")

@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 )
@@ -175,6 +176,7 @@ func (dt *DispatchTracker) cleanupOldEntriesLocked() {
 		}
 	}
 
+	// BUG FIX #15: Use sort.Slice instead of O(n²) bubble sort
 	// If still over max size after cleanup, remove oldest entries
 	if len(dt.dispatched) > dt.maxSize {
 		// Convert to slice for sorting by timestamp
@@ -183,14 +185,10 @@ func (dt *DispatchTracker) cleanupOldEntriesLocked() {
 			entries = append(entries, entry)
 		}
 
-		// Sort by timestamp (oldest first)
-		for i := 0; i < len(entries)-1; i++ {
-			for j := i + 1; j < len(entries); j++ {
-				if entries[i].Timestamp.After(entries[j].Timestamp) {
-					entries[i], entries[j] = entries[j], entries[i]
-				}
-			}
-		}
+		// Sort by timestamp (oldest first) using efficient sort.Slice
+		sort.Slice(entries, func(i, j int) bool {
+			return entries[i].Timestamp.Before(entries[j].Timestamp)
+		})
 
 		// Remove oldest entries until we're under max size
 		toRemove := len(dt.dispatched) - dt.maxSize

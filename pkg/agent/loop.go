@@ -22,9 +22,11 @@ import (
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
+	"github.com/sipeed/picoclaw/pkg/embedding"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/mcp"
 	"github.com/sipeed/picoclaw/pkg/media"
+	memory "github.com/sipeed/picoclaw/pkg/memory/vector"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/skills"
@@ -34,16 +36,28 @@ import (
 )
 
 type AgentLoop struct {
-	bus            *bus.MessageBus
-	cfg            *config.Config
-	registry       *AgentRegistry
-	state          *state.Manager
-	running        atomic.Bool
-	summarizing    sync.Map
-	fallback       *providers.FallbackChain
-	channelManager *channels.Manager
-	mediaStore     media.MediaStore
-	reasoningSem   chan struct{}
+	bus              *bus.MessageBus
+	cfg              *config.Config
+	registry         *AgentRegistry
+	state            *state.Manager
+	running          atomic.Bool
+	summarizing      sync.Map
+	fallback         *providers.FallbackChain
+	channelManager   *channels.Manager
+	mediaStore       media.MediaStore
+	reasoningSem     chan struct{}
+	vectorStore      memory.VectorStore
+	memoryProvider   memory.MemoryProvider
+	embeddingService embedding.Service
+	memoryEnabled    atomic.Bool       // BUG FIX #12: Use atomic.Bool to prevent race condition
+	teamManager      tools.TeamManager // Team manager for multi-agent collaboration
+	router           *routing.Router   // v0.2.1: Model router for cost optimization
+}
+
+// HandleMention implements MentionHandler interface
+func (al *AgentLoop) HandleMention(ctx context.Context, mentionedID, message, channel, chatID string) (string, error) {
+	// Process the mention by routing to the mentioned agent
+	return al.ProcessWithAgent(ctx, mentionedID, message, fmt.Sprintf("mention:%s", mentionedID), channel, chatID)
 }
 
 // processOptions configures how a message is processed
@@ -68,8 +82,8 @@ func NewAgentLoop(
 ) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
 
-	// Register shared tools to all agents
-	registerSharedTools(cfg, msgBus, registry, provider)
+	// Register shared tools to all agents (pass nil for teamManager, will be set later)
+	registerSharedTools(cfg, msgBus, registry, provider, nil)
 
 	// Set up shared fallback chain
 	cooldown := providers.NewCooldownTracker()
@@ -82,23 +96,186 @@ func NewAgentLoop(
 		stateManager = state.NewManager(defaultAgent.Workspace)
 	}
 
-	return &AgentLoop{
-		bus:          msgBus,
-		cfg:          cfg,
-		registry:     registry,
-		state:        stateManager,
-		summarizing:  sync.Map{},
-		reasoningSem: make(chan struct{}, 10),
-		fallback:     fallbackChain,
+	// Initialize vector memory if enabled
+	var vectorStore memory.VectorStore
+	var memoryProvider memory.MemoryProvider
+	var embeddingService embedding.Service
+	var memoryEnabled atomic.Bool // BUG FIX #12: Use atomic.Bool
+
+	if cfg.Memory.Enabled {
+		// Initialize embedding service
+		embeddingService = initializeEmbeddingService(cfg.Memory.Embedding)
+
+		// Initialize vector store
+		if cfg.Memory.VectorStore.Provider != "none" && embeddingService != nil {
+			vectorStore = initializeVectorStore(cfg.Memory.VectorStore, cfg.Memory.Embedding.Dimension)
+			if vectorStore != nil {
+				memoryEnabled.Store(true)
+				logger.InfoCF("agent", "Vector memory initialized",
+					map[string]any{
+						"embedding_provider": cfg.Memory.Embedding.Provider,
+						"vector_provider":    cfg.Memory.VectorStore.Provider,
+						"dimension":          cfg.Memory.Embedding.Dimension,
+					})
+			}
+		}
+
+		// Initialize Memory Provider (e.g. Mem0)
+		if cfg.Memory.MemoryProvider.Provider != "none" && cfg.Memory.MemoryProvider.Provider != "" {
+			memoryProvider = initializeMemoryProvider(cfg.Memory.MemoryProvider)
+			if memoryProvider != nil {
+				memoryEnabled.Store(true)
+				logger.InfoCF("agent", "Memory provider initialized",
+					map[string]any{"provider": cfg.Memory.MemoryProvider.Provider})
+			}
+		}
+	}
+
+	al := &AgentLoop{
+		bus:              msgBus,
+		cfg:              cfg,
+		registry:         registry,
+		state:            stateManager,
+		summarizing:      sync.Map{},
+		reasoningSem:     make(chan struct{}, 10),
+		fallback:         fallbackChain,
+		vectorStore:      vectorStore,
+		memoryProvider:   memoryProvider,
+		embeddingService: embeddingService,
+		teamManager:      nil,                            // Will be set via SetTeamManager
+		router:           routing.NewRouter(cfg.Routing), // v0.2.1: Initialize model router
+	}
+
+	// Copy atomic.Bool state without copying the lock
+	al.memoryEnabled.Store(memoryEnabled.Load())
+
+	return al
+}
+
+// initializeEmbeddingService creates an embedding service based on configuration
+func initializeEmbeddingService(cfg config.EmbeddingConfig) embedding.Service {
+	switch cfg.Provider {
+	case "openai", "litellm", "deepseek", "mistral", "vllm", "ollama":
+		service, err := embedding.NewOpenAIService(embedding.Config{
+			Provider:  cfg.Provider,
+			Model:     cfg.Model,
+			Dimension: cfg.Dimension,
+			APIKey:    cfg.APIKey,
+			BaseURL:   cfg.BaseURL,
+			TimeoutMs: cfg.TimeoutMS,
+		})
+		if err != nil {
+			logger.ErrorCF("agent", fmt.Sprintf("Failed to initialize %s embedding service", cfg.Provider),
+				map[string]any{"error": err.Error()})
+			return embedding.NewNullService(cfg.Dimension)
+		}
+		return service
+
+	case "none", "":
+		logger.InfoCF("agent", "No embedding provider specified, using null service",
+			map[string]any{"dimension": cfg.Dimension})
+		return embedding.NewNullService(cfg.Dimension)
+
+	default:
+		logger.WarnCF("agent", "Unknown embedding provider, using null service",
+			map[string]any{"provider": cfg.Provider, "dimension": cfg.Dimension})
+		return embedding.NewNullService(cfg.Dimension)
 	}
 }
 
-// registerSharedTools registers tools that are shared across all agents (web, message, spawn).
+// initializeVectorStore creates a vector store based on configuration
+func initializeVectorStore(cfg config.VectorStoreConfig, dimension int) memory.VectorStore {
+	switch cfg.Provider {
+	case "qdrant":
+		// Check if Qdrant is explicitly disabled
+		if !cfg.Qdrant.Enabled {
+			logger.InfoCF("agent", "Qdrant is disabled in config", nil)
+			return nil
+		}
+
+		// Check if Qdrant is available (not built with no_qdrant tag)
+		store, err := createQdrantStore(cfg, dimension)
+		if err != nil {
+			logger.ErrorCF("agent", "Failed to initialize Qdrant store",
+				map[string]any{"error": err.Error()})
+			return nil
+		}
+		return store
+
+	case "lancedb":
+		// Check if LanceDB is explicitly disabled
+		if !cfg.LanceDB.Enabled {
+			logger.InfoCF("agent", "LanceDB is disabled in config", nil)
+			return nil
+		}
+
+		// Check if LanceDB is available (not built without CGO)
+		store, err := createLanceDBStore(cfg, dimension)
+		if err != nil {
+			logger.ErrorCF("agent", "Failed to initialize LanceDB store",
+				map[string]any{"error": err.Error()})
+			return nil
+		}
+		return store
+
+	case "none", "":
+		logger.InfoCF("agent", "No vector store provider specified, vector memory disabled", nil)
+		return nil
+
+	default:
+		logger.WarnCF("agent", "Unknown vector store provider",
+			map[string]any{"provider": cfg.Provider})
+		return nil
+	}
+}
+
+// initializeMemoryProvider creates a memory provider based on configuration
+func initializeMemoryProvider(cfg config.MemoryProviderConfig) memory.MemoryProvider {
+	switch strings.ToLower(cfg.Provider) {
+	case "mem0":
+		if !cfg.Mem0.Enabled {
+			logger.InfoCF("agent", "Mem0 is disabled in config", nil)
+			return nil
+		}
+
+		breaker := memory.NewCircuitBreaker(memory.CircuitBreakerConfig{
+			MaxFailures:   5,
+			ResetTimeoutS: 30,
+			HalfOpenMax:   3,
+		})
+
+		client, err := memory.NewMem0Client(memory.Mem0Config{
+			Enabled:   cfg.Mem0.Enabled,
+			URL:       cfg.Mem0.URL,
+			APIKey:    cfg.Mem0.APIKey,
+			TimeoutMS: cfg.Mem0.TimeoutMS,
+		}, breaker)
+
+		if err != nil {
+			logger.ErrorCF("agent", "Failed to initialize Mem0 client",
+				map[string]any{"error": err.Error()})
+			return nil
+		}
+		return client
+
+	case "none", "":
+		logger.InfoCF("agent", "No memory provider specified", nil)
+		return nil
+
+	default:
+		logger.WarnCF("agent", "Unknown memory provider",
+			map[string]any{"provider": cfg.Provider})
+		return nil
+	}
+}
+
+// registerSharedTools registers tools that are shared across all agents (web, message, spawn, team).
 func registerSharedTools(
 	cfg *config.Config,
 	msgBus *bus.MessageBus,
 	registry *AgentRegistry,
 	provider providers.LLMProvider,
+	teamManager tools.TeamManager,
 ) {
 	for _, agentID := range registry.ListAgentIDs() {
 		agent, ok := registry.GetAgent(agentID)
@@ -106,72 +283,99 @@ func registerSharedTools(
 			continue
 		}
 
-		// Web tools
-		searchTool, err := tools.NewWebSearchTool(tools.WebSearchToolOptions{
-			BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
-			BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
-			BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
-			TavilyAPIKey:         cfg.Tools.Web.Tavily.APIKey,
-			TavilyBaseURL:        cfg.Tools.Web.Tavily.BaseURL,
-			TavilyMaxResults:     cfg.Tools.Web.Tavily.MaxResults,
-			TavilyEnabled:        cfg.Tools.Web.Tavily.Enabled,
-			DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
-			DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
-			PerplexityAPIKey:     cfg.Tools.Web.Perplexity.APIKey,
-			PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
-			PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
-			Proxy:                cfg.Tools.Web.Proxy,
-		})
-		if err != nil {
-			logger.ErrorCF("agent", "Failed to create web search tool", map[string]any{"error": err.Error()})
-		} else if searchTool != nil {
-			agent.Tools.Register(searchTool)
-		}
-		fetchTool, err := tools.NewWebFetchToolWithProxy(50000, cfg.Tools.Web.Proxy, cfg.Tools.Web.FetchLimitBytes)
-		if err != nil {
-			logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
-		} else {
-			agent.Tools.Register(fetchTool)
-		}
-
-		// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
-		agent.Tools.Register(tools.NewI2CTool())
-		agent.Tools.Register(tools.NewSPITool())
-
-		// Message tool
-		messageTool := tools.NewMessageTool()
-		messageTool.SetSendCallback(func(channel, chatID, content string) error {
-			pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer pubCancel()
-			return msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
-				Channel: channel,
-				ChatID:  chatID,
-				Content: content,
+		// Web tools (v0.2.1: check if enabled)
+		if cfg.Tools.WebToolsEnabled {
+			searchTool, err := tools.NewWebSearchTool(tools.WebSearchToolOptions{
+				BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
+				BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
+				BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
+				TavilyAPIKey:         cfg.Tools.Web.Tavily.APIKey,
+				TavilyBaseURL:        cfg.Tools.Web.Tavily.BaseURL,
+				TavilyMaxResults:     cfg.Tools.Web.Tavily.MaxResults,
+				TavilyEnabled:        cfg.Tools.Web.Tavily.Enabled,
+				DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
+				DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
+				PerplexityAPIKey:     cfg.Tools.Web.Perplexity.APIKey,
+				PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
+				PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
+				SearXNGBaseURL:       cfg.Tools.Web.SearXNG.BaseURL,
+				SearXNGMaxResults:    cfg.Tools.Web.SearXNG.MaxResults,
+				SearXNGEnabled:       cfg.Tools.Web.SearXNG.Enabled,
+				GLMAPIKey:            cfg.Tools.Web.GLM.APIKey,
+				GLMMaxResults:        cfg.Tools.Web.GLM.MaxResults,
+				GLMEnabled:           cfg.Tools.Web.GLM.Enabled,
+				ExaAPIKey:            cfg.Tools.Web.Exa.APIKey,
+				ExaMaxResults:        cfg.Tools.Web.Exa.MaxResults,
+				ExaEnabled:           cfg.Tools.Web.Exa.Enabled,
+				Proxy:                cfg.Tools.Web.Proxy,
 			})
-		})
-		agent.Tools.Register(messageTool)
+			if err != nil {
+				logger.ErrorCF("agent", "Failed to create web search tool", map[string]any{"error": err.Error()})
+			} else if searchTool != nil {
+				agent.Tools.Register(searchTool)
+			}
+			fetchTool, err := tools.NewWebFetchToolWithProxy(50000, cfg.Tools.Web.Proxy, cfg.Tools.Web.FetchLimitBytes)
+			if err != nil {
+				logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+			} else {
+				agent.Tools.Register(fetchTool)
+			}
+		}
 
-		// Skill discovery and installation tools
-		registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
-			MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
-			ClawHub:               skills.ClawHubConfig(cfg.Tools.Skills.Registries.ClawHub),
-		})
-		searchCache := skills.NewSearchCache(
-			cfg.Tools.Skills.SearchCache.MaxSize,
-			time.Duration(cfg.Tools.Skills.SearchCache.TTLSeconds)*time.Second,
-		)
-		agent.Tools.Register(tools.NewFindSkillsTool(registryMgr, searchCache))
-		agent.Tools.Register(tools.NewInstallSkillTool(registryMgr, agent.Workspace))
+		// Hardware tools (v0.2.1: check if enabled) - Linux only, returns error on other platforms
+		if cfg.Tools.HardwareToolsEnabled {
+			agent.Tools.Register(tools.NewI2CTool())
+			agent.Tools.Register(tools.NewSPITool())
+		}
 
-		// Spawn tool with allowlist checker
-		subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus)
-		subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
-		spawnTool := tools.NewSpawnTool(subagentManager)
-		currentAgentID := agentID
-		spawnTool.SetAllowlistChecker(func(targetAgentID string) bool {
-			return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
-		})
-		agent.Tools.Register(spawnTool)
+		// Message tool (v0.2.1: check if enabled)
+		if cfg.Tools.MessageToolEnabled {
+			messageTool := tools.NewMessageTool()
+			messageTool.SetSendCallback(func(channel, chatID, content string) error {
+				pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer pubCancel()
+				return msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
+					Channel: channel,
+					ChatID:  chatID,
+					Content: content,
+				})
+			})
+			agent.Tools.Register(messageTool)
+		}
+
+		// Skill discovery and installation tools (v0.2.1: check if enabled)
+		if cfg.Tools.SkillToolsEnabled {
+			registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
+				MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
+				ClawHub:               skills.ClawHubConfig(cfg.Tools.Skills.Registries.ClawHub),
+			})
+			searchCache := skills.NewSearchCache(
+				cfg.Tools.Skills.SearchCache.MaxSize,
+				time.Duration(cfg.Tools.Skills.SearchCache.TTLSeconds)*time.Second,
+			)
+			agent.Tools.Register(tools.NewFindSkillsTool(registryMgr, searchCache))
+			agent.Tools.Register(tools.NewInstallSkillTool(registryMgr, agent.Workspace))
+		}
+
+		// Spawn tool (v0.2.1: check if enabled) with allowlist checker
+		if cfg.Tools.SpawnToolEnabled {
+			subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus)
+			subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
+			spawnTool := tools.NewSpawnTool(subagentManager)
+			currentAgentID := agentID
+			spawnTool.SetAllowlistChecker(func(targetAgentID string) bool {
+				return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
+			})
+			agent.Tools.Register(spawnTool)
+		}
+
+		// Team delegation tools (v0.2.1: check if enabled) (if team manager available)
+		if cfg.Tools.TeamToolsEnabled && teamManager != nil {
+			agent.Tools.Register(tools.NewTeamDelegationTool(teamManager))
+			agent.Tools.Register(tools.NewTeamStatusTool(teamManager))
+			logger.DebugCF("agent", "Registered team tools",
+				map[string]any{"agent_id": agentID})
+		}
 	}
 }
 
@@ -183,6 +387,10 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 		mcpManager := mcp.NewManager()
 		// Ensure MCP connections are cleaned up on exit, regardless of initialization success
 		// This fixes resource leak when LoadFromMCPConfig partially succeeds then fails
+		// The defer ensures cleanup happens even if:
+		// 1. LoadFromMCPConfig fails after partial initialization
+		// 2. Tool registration fails
+		// 3. Main loop exits due to context cancellation
 		defer func() {
 			if err := mcpManager.Close(); err != nil {
 				logger.ErrorCF("agent", "Failed to close MCP manager",
@@ -255,7 +463,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 			}
 
 			// Process message
-			func() {
+			go func(msg bus.InboundMessage) {
 				// TODO: Re-enable media cleanup after inbound media is properly consumed by the agent.
 				// Currently disabled because files are deleted before the LLM can access their content.
 				// defer func() {
@@ -315,7 +523,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 						)
 					}
 				}
-			}()
+			}(msg)
 		}
 	}
 
@@ -324,6 +532,21 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 func (al *AgentLoop) Stop() {
 	al.running.Store(false)
+
+	// Close vector memory connections
+	if al.vectorStore != nil {
+		if err := al.vectorStore.Close(); err != nil {
+			logger.ErrorCF("agent", "Failed to close vector store",
+				map[string]any{"error": err.Error()})
+		}
+	}
+
+	if al.embeddingService != nil {
+		if err := al.embeddingService.Close(); err != nil {
+			logger.ErrorCF("agent", "Failed to close embedding service",
+				map[string]any{"error": err.Error()})
+		}
+	}
 }
 
 func (al *AgentLoop) RegisterTool(tool tools.Tool) {
@@ -341,6 +564,16 @@ func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 // SetMediaStore injects a MediaStore for media lifecycle management.
 func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
 	al.mediaStore = s
+}
+
+// SetTeamManager sets the team manager and registers team tools
+func (al *AgentLoop) SetTeamManager(teamManager tools.TeamManager) {
+	al.teamManager = teamManager
+
+	// Re-register shared tools with team manager
+	registerSharedTools(al.cfg, al.bus, al.registry, al.registry.GetDefaultAgent().Provider, teamManager)
+
+	logger.InfoCF("agent", "Team manager configured, team tools registered", nil)
 }
 
 // GetRegistry returns the agent registry
@@ -651,6 +884,28 @@ func (al *AgentLoop) runAgentLoop(
 		history = agent.Sessions.GetHistory(opts.SessionKey)
 		summary = agent.Sessions.GetSummary(opts.SessionKey)
 	}
+
+	// Search vector memory for relevant context
+	var memoryContext string
+	if al.memoryEnabled.Load() && opts.UserMessage != "" {
+		if al.vectorStore != nil {
+			memoryContext = al.searchVectorMemory(ctx, opts.UserMessage, opts.SessionKey)
+		}
+
+		var extendedContext string
+		if al.memoryProvider != nil {
+			extendedContext = al.searchMemoryProvider(ctx, opts.UserMessage, opts.SessionKey)
+		}
+
+		if extendedContext != "" {
+			if memoryContext != "" {
+				memoryContext += "\n\nAdditional Personalized Context:\n" + extendedContext
+			} else {
+				memoryContext = "Personalized Context:\n" + extendedContext
+			}
+		}
+	}
+
 	messages := agent.ContextBuilder.BuildMessages(
 		history,
 		summary,
@@ -659,6 +914,11 @@ func (al *AgentLoop) runAgentLoop(
 		opts.Channel,
 		opts.ChatID,
 	)
+
+	// Inject memory context into system prompt if found
+	if memoryContext != "" {
+		al.injectMemoryContext(messages, memoryContext)
+	}
 
 	// Resolve media:// refs to base64 data URLs (streaming)
 	maxMediaSize := al.cfg.Agents.Defaults.GetMaxMediaSize()
@@ -684,11 +944,23 @@ func (al *AgentLoop) runAgentLoop(
 	// 5. Handle empty response
 	if finalContent == "" {
 		finalContent = opts.DefaultResponse
-	}
+	} else {
+		// 6. Save final assistant message to session
+		agent.Sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
+		agent.Sessions.Save(opts.SessionKey)
 
-	// 6. Save final assistant message to session
-	agent.Sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
-	agent.Sessions.Save(opts.SessionKey)
+		// Store in vector memory (async)
+		if al.memoryEnabled.Load() && !opts.NoHistory {
+			// BUG FIX: Pass parent context instead of Background to respect cancellation
+			// Create a detached context with timeout to prevent blocking shutdown
+			storeCtx, storeCancel := context.WithTimeout(context.Background(), 45*time.Second)
+			go func(a *AgentInstance) {
+				defer storeCancel()
+				al.storeInVectorMemory(storeCtx, a, opts.SessionKey,
+					opts.UserMessage, finalContent, opts.Channel)
+			}(agent)
+		}
+	}
 
 	// 7. Optional: summarization (skip if context cancelled)
 	if opts.EnableSummary && ctx.Err() == nil {
@@ -832,6 +1104,32 @@ func (al *AgentLoop) runLLMIteration(
 				"max":       agent.MaxIterations,
 			})
 
+		// v0.2.1: Model routing - select model based on complexity
+		selectedModel := agent.Model
+		if al.router != nil && iteration == 1 {
+			// Only route on first iteration (user message)
+			// Get last user message for routing decision
+			var lastUserMsg string
+			for i := len(messages) - 1; i >= 0; i-- {
+				if messages[i].Role == "user" {
+					lastUserMsg = messages[i].Content
+					break
+				}
+			}
+
+			if lastUserMsg != "" {
+				routedModel := al.router.SelectModel(lastUserMsg, messages, agent.Model)
+				if routedModel != "" && routedModel != agent.Model {
+					selectedModel = routedModel
+					logger.InfoCF("agent", "Model routed",
+						map[string]any{
+							"from": agent.Model,
+							"to":   selectedModel,
+						})
+				}
+			}
+		}
+
 		// Build tool definitions
 		providerToolDefs := agent.Tools.ToProviderDefs()
 
@@ -840,7 +1138,7 @@ func (al *AgentLoop) runLLMIteration(
 			map[string]any{
 				"agent_id":          agent.ID,
 				"iteration":         iteration,
-				"model":             agent.Model,
+				"model":             selectedModel,
 				"messages_count":    len(messages),
 				"tools_count":       len(providerToolDefs),
 				"max_tokens":        agent.MaxTokens,
@@ -892,7 +1190,7 @@ func (al *AgentLoop) runLLMIteration(
 				}
 				return fbResult.Response, nil
 			}
-			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, map[string]any{
+			return agent.Provider.Chat(ctx, messages, providerToolDefs, selectedModel, map[string]any{
 				"max_tokens":       agent.MaxTokens,
 				"temperature":      agent.Temperature,
 				"prompt_cache_key": agent.ID,
@@ -934,7 +1232,14 @@ func (al *AgentLoop) runLLMIteration(
 					"retry":   retry,
 					"backoff": backoff.String(),
 				})
-				time.Sleep(backoff)
+
+				// Respect context cancellation during backoff
+				select {
+				case <-ctx.Done():
+					return "", iteration, ctx.Err()
+				case <-time.After(backoff):
+					// Continue to retry
+				}
 				continue
 			}
 
@@ -985,15 +1290,26 @@ func (al *AgentLoop) runLLMIteration(
 			al.targetReasoningChannelID(opts.Channel),
 		)
 
+		// v0.2.1: Handle extended thinking (Anthropic reasoning_content)
+		if response.ReasoningContent != "" {
+			go al.handleReasoning(
+				ctx,
+				response.ReasoningContent,
+				opts.Channel,
+				al.targetReasoningChannelID(opts.Channel),
+			)
+		}
+
 		logger.DebugCF("agent", "LLM response",
 			map[string]any{
-				"agent_id":       agent.ID,
-				"iteration":      iteration,
-				"content_chars":  len(response.Content),
-				"tool_calls":     len(response.ToolCalls),
-				"reasoning":      response.Reasoning,
-				"target_channel": al.targetReasoningChannelID(opts.Channel),
-				"channel":        opts.Channel,
+				"agent_id":          agent.ID,
+				"iteration":         iteration,
+				"content_chars":     len(response.Content),
+				"tool_calls":        len(response.ToolCalls),
+				"reasoning":         response.Reasoning,
+				"reasoning_content": response.ReasoningContent,
+				"target_channel":    al.targetReasoningChannelID(opts.Channel),
+				"channel":           opts.Channel,
 			})
 		// Check if no tool calls - we're done
 		if len(response.ToolCalls) == 0 {
@@ -1058,62 +1374,76 @@ func (al *AgentLoop) runLLMIteration(
 		// Save assistant message with tool calls to session
 		agent.Sessions.AddFullMessage(opts.SessionKey, assistantMsg)
 
-		// Execute tool calls
-		for _, tc := range normalizedToolCalls {
-			argsJSON, _ := json.Marshal(tc.Arguments)
-			argsPreview := utils.Truncate(string(argsJSON), 200)
-			logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
-				map[string]any{
-					"agent_id":  agent.ID,
-					"tool":      tc.Name,
-					"iteration": iteration,
-				})
+		// v0.2.1: Execute tool calls in parallel for better performance
+		type indexedAgentResult struct {
+			result *tools.ToolResult
+			tc     providers.ToolCall
+		}
 
-			// Create async callback for tools that implement AsyncTool
-			// NOTE: Following openclaw's design, async tools do NOT send results directly to users.
-			// Instead, they notify the agent via PublishInbound, and the agent decides
-			// whether to forward the result to the user (in processSystemMessage).
-			asyncCallback := func(callbackCtx context.Context, result *tools.ToolResult) {
-				// Log the async completion but don't send directly to user
-				// The agent will handle user notification via processSystemMessage
-				if !result.Silent && result.ForUser != "" {
-					logger.InfoCF("agent", "Async tool completed, agent will handle notification",
-						map[string]any{
-							"tool":        tc.Name,
-							"content_len": len(result.ForUser),
-						})
+		agentResults := make([]indexedAgentResult, len(normalizedToolCalls))
+		var wg sync.WaitGroup
+
+		for i, tc := range normalizedToolCalls {
+			agentResults[i].tc = tc
+
+			wg.Add(1)
+			go func(idx int, tc providers.ToolCall) {
+				defer wg.Done()
+
+				argsJSON, _ := json.Marshal(tc.Arguments)
+				argsPreview := utils.Truncate(string(argsJSON), 200)
+				logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
+					map[string]any{
+						"agent_id":  agent.ID,
+						"tool":      tc.Name,
+						"iteration": iteration,
+					})
+
+				// Create async callback for tools that implement AsyncTool
+				asyncCallback := func(callbackCtx context.Context, result *tools.ToolResult) {
+					if !result.Silent && result.ForUser != "" {
+						logger.InfoCF("agent", "Async tool completed, agent will handle notification",
+							map[string]any{
+								"tool":        tc.Name,
+								"content_len": len(result.ForUser),
+							})
+					}
 				}
-			}
 
-			toolResult := agent.Tools.ExecuteWithContext(
-				ctx,
-				tc.Name,
-				tc.Arguments,
-				opts.Channel,
-				opts.ChatID,
-				asyncCallback,
-			)
+				toolResult := agent.Tools.ExecuteWithContext(
+					ctx,
+					tc.Name,
+					tc.Arguments,
+					opts.Channel,
+					opts.ChatID,
+					asyncCallback,
+				)
+				agentResults[idx].result = toolResult
+			}(i, tc)
+		}
+		wg.Wait()
 
+		// Process results in original order (send to user, save to session)
+		for _, r := range agentResults {
 			// Send ForUser content to user immediately if not Silent
-			if !toolResult.Silent && toolResult.ForUser != "" && opts.SendResponse {
+			if !r.result.Silent && r.result.ForUser != "" && opts.SendResponse {
 				al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 					Channel: opts.Channel,
 					ChatID:  opts.ChatID,
-					Content: toolResult.ForUser,
+					Content: r.result.ForUser,
 				})
 				logger.DebugCF("agent", "Sent tool result to user",
 					map[string]any{
-						"tool":        tc.Name,
-						"content_len": len(toolResult.ForUser),
+						"tool":        r.tc.Name,
+						"content_len": len(r.result.ForUser),
 					})
 			}
 
 			// If tool returned media refs, publish them as outbound media
-			if len(toolResult.Media) > 0 && opts.SendResponse {
-				parts := make([]bus.MediaPart, 0, len(toolResult.Media))
-				for _, ref := range toolResult.Media {
+			if len(r.result.Media) > 0 && opts.SendResponse {
+				parts := make([]bus.MediaPart, 0, len(r.result.Media))
+				for _, ref := range r.result.Media {
 					part := bus.MediaPart{Ref: ref}
-					// Populate metadata from MediaStore when available
 					if al.mediaStore != nil {
 						if _, meta, err := al.mediaStore.ResolveWithMeta(ref); err == nil {
 							part.Filename = meta.Filename
@@ -1131,15 +1461,15 @@ func (al *AgentLoop) runLLMIteration(
 			}
 
 			// Determine content for LLM based on tool result
-			contentForLLM := toolResult.ForLLM
-			if contentForLLM == "" && toolResult.Err != nil {
-				contentForLLM = toolResult.Err.Error()
+			contentForLLM := r.result.ForLLM
+			if contentForLLM == "" && r.result.Err != nil {
+				contentForLLM = r.result.Err.Error()
 			}
 
 			toolResultMsg := providers.Message{
 				Role:       "tool",
 				Content:    contentForLLM,
-				ToolCallID: tc.ID,
+				ToolCallID: r.tc.ID,
 			}
 			messages = append(messages, toolResultMsg)
 
@@ -1172,12 +1502,24 @@ func (al *AgentLoop) updateToolContexts(agent *AgentInstance, channel, chatID st
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
-func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, chatID string) {
+func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, _, _ string) {
 	newHistory := agent.Sessions.GetHistory(sessionKey)
 	tokenEstimate := al.estimateTokens(newHistory)
-	threshold := agent.ContextWindow * 75 / 100
 
-	if len(newHistory) > 20 || tokenEstimate > threshold {
+	// v0.2.1: Use configurable thresholds from config
+	messageThreshold := al.cfg.Session.SummarizationMessageThreshold
+	if messageThreshold == 0 {
+		messageThreshold = 20 // Fallback to default if not set
+	}
+
+	tokenPercent := al.cfg.Session.SummarizationTokenPercent
+	if tokenPercent == 0 {
+		tokenPercent = 0.75 // Fallback to default if not set
+	}
+
+	threshold := int(float64(agent.ContextWindow) * tokenPercent)
+
+	if len(newHistory) > messageThreshold || tokenEstimate > threshold {
 		summarizeKey := agent.ID + ":" + sessionKey
 		if _, loading := al.summarizing.LoadOrStore(summarizeKey, true); !loading {
 			go func() {
@@ -1194,7 +1536,13 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 							})
 					}
 				}()
-				logger.Debug("Memory threshold reached. Optimizing conversation history...")
+				logger.DebugCF("agent", "Memory threshold reached. Optimizing conversation history...",
+					map[string]any{
+						"message_count":     len(newHistory),
+						"message_threshold": messageThreshold,
+						"token_estimate":    tokenEstimate,
+						"token_threshold":   threshold,
+					})
 				al.summarizeSession(agent, sessionKey)
 			}()
 		}
@@ -1230,14 +1578,18 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 
 	newHistory := make([]providers.Message, 0, 1+len(keptConversation)+1)
 
-	// Append compression note to the original system prompt instead of adding a new system message
-	// This avoids having two consecutive system messages which some APIs (like Zhipu) reject
+	// Strip any existing compression note from the system prompt to prevent accumulation
+	systemContent := history[0].Content
+	if idx := strings.LastIndex(systemContent, "\n\n[System Note: Emergency compression dropped"); idx >= 0 {
+		systemContent = systemContent[:idx]
+	}
+
 	compressionNote := fmt.Sprintf(
 		"\n\n[System Note: Emergency compression dropped %d oldest messages due to context limit]",
 		droppedCount,
 	)
 	enhancedSystemPrompt := history[0]
-	enhancedSystemPrompt.Content = enhancedSystemPrompt.Content + compressionNote
+	enhancedSystemPrompt.Content = systemContent + compressionNote
 	newHistory = append(newHistory, enhancedSystemPrompt)
 
 	newHistory = append(newHistory, keptConversation...)
@@ -1384,8 +1736,13 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 		part1 := validMessages[:mid]
 		part2 := validMessages[mid:]
 
-		s1, _ := al.summarizeBatch(ctx, agent, part1, "")
-		s2, _ := al.summarizeBatch(ctx, agent, part2, "")
+		s1, err1 := al.summarizeBatch(ctx, agent, part1, "")
+		s2, err2 := al.summarizeBatch(ctx, agent, part2, "")
+
+		if err1 != nil && err2 != nil {
+			logger.ErrorCF("agent", "Failed to summarize both batches", nil)
+			return // Abort to prevent WIPING OUT context
+		}
 
 		mergePrompt := fmt.Sprintf(
 			"Merge these two conversation summaries into one cohesive summary:\n\n1: %s\n\n2: %s",
@@ -1403,24 +1760,31 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 				"prompt_cache_key": agent.ID,
 			},
 		)
-		if err == nil {
+		if err == nil && resp.Content != "" {
 			finalSummary = resp.Content
 		} else {
-			finalSummary = s1 + " " + s2
+			finalSummary = strings.TrimSpace(s1 + "\n\n" + s2)
 		}
 	} else {
-		finalSummary, _ = al.summarizeBatch(ctx, agent, validMessages, summary)
+		summaryResult, err := al.summarizeBatch(ctx, agent, validMessages, summary)
+		if err != nil || summaryResult == "" {
+			logger.ErrorCF("agent", "Summarization failed", map[string]any{"error": err})
+			return // Abort to prevent wipeout
+		}
+		finalSummary = summaryResult
+	}
+
+	if finalSummary == "" {
+		return // Guard against empty summary wipeout
 	}
 
 	if omitted && finalSummary != "" {
 		finalSummary += "\n[Note: Some oversized messages were omitted from this summary for efficiency.]"
 	}
 
-	if finalSummary != "" {
-		agent.Sessions.SetSummary(sessionKey, finalSummary)
-		agent.Sessions.TruncateHistory(sessionKey, 4)
-		agent.Sessions.Save(sessionKey)
-	}
+	agent.Sessions.SetSummary(sessionKey, finalSummary)
+	agent.Sessions.TruncateHistory(sessionKey, 4)
+	agent.Sessions.Save(sessionKey)
 }
 
 // summarizeBatch summarizes a batch of messages.
@@ -1474,7 +1838,7 @@ func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
 	return totalChars * 2 / 5
 }
 
-func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) (string, bool) {
+func (al *AgentLoop) handleCommand(_ context.Context, msg bus.InboundMessage) (string, bool) {
 	content := strings.TrimSpace(msg.Content)
 	if !strings.HasPrefix(content, "/") {
 		return "", false
@@ -1562,6 +1926,311 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 	}
 
 	return "", false
+}
+
+// searchVectorMemory searches for relevant past conversations in vector memory
+func (al *AgentLoop) searchVectorMemory(ctx context.Context, query string, sessionKey string) string {
+	if al.vectorStore == nil || al.embeddingService == nil {
+		return ""
+	}
+
+	// Generate embedding for query
+	embedding, err := al.embeddingService.Generate(ctx, query)
+	if err != nil {
+		logger.DebugCF("agent", "Failed to generate embedding for search",
+			map[string]any{"error": err.Error()})
+		return ""
+	}
+
+	// BUG FIX #10: Check if embedding is empty (len() for nil slices is defined as zero)
+	if len(embedding) == 0 {
+		logger.DebugCF("agent", "Empty embedding result", nil)
+		return ""
+	}
+
+	// BUG FIX #11: Limit search results to prevent memory leak
+	maxResults := 3
+	if maxResults > 10 {
+		maxResults = 10 // Hard limit
+	}
+
+	// Search similar vectors
+	results, err := al.vectorStore.Search(ctx, memory.Vector{
+		Embedding: embedding,
+	}, maxResults)
+
+	if err != nil {
+		logger.DebugCF("agent", "Vector search failed",
+			map[string]any{"error": err.Error()})
+		return ""
+	}
+
+	if len(results) == 0 {
+		return ""
+	}
+
+	// Build context from results
+	var contextBuilder strings.Builder
+	contextBuilder.WriteString("\n\n[Relevant past context from memory:]\n")
+	for i, result := range results {
+		if content, ok := result.Metadata["content"].(string); ok {
+			contextBuilder.WriteString(fmt.Sprintf("%d. %s (relevance: %.2f)\n",
+				i+1, content, result.Score))
+		}
+	}
+
+	logger.DebugCF("agent", "Retrieved memory context",
+		map[string]any{
+			"results": len(results),
+			"session": sessionKey,
+		})
+
+	return contextBuilder.String()
+}
+
+// searchMemoryProvider searches for relevant past conversations in a memory provider (like Mem0)
+func (al *AgentLoop) searchMemoryProvider(ctx context.Context, query string, sessionKey string) string {
+	if al.memoryProvider == nil {
+		return ""
+	}
+
+	// Limit search results
+	maxResults := 3
+
+	// Create a timeout context specifically for search
+	searchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	// Search via provider
+	results, err := al.memoryProvider.Recall(searchCtx, query, maxResults)
+	if err != nil {
+		logger.DebugCF("agent", "Memory provider search failed",
+			map[string]any{"error": err.Error()})
+		return ""
+	}
+
+	if len(results) == 0 {
+		return ""
+	}
+
+	// Build context from results
+	var contextBuilder strings.Builder
+	for _, result := range results {
+		contextBuilder.WriteString(fmt.Sprintf("- %s\n", result.Content))
+	}
+
+	logger.DebugCF("agent", "Retrieved provider memory context",
+		map[string]any{
+			"results": len(results),
+			"session": sessionKey,
+		})
+
+	return contextBuilder.String()
+}
+
+// injectMemoryContext injects memory context into the system prompt
+func (al *AgentLoop) injectMemoryContext(messages []providers.Message, context string) {
+	if len(messages) == 0 {
+		return
+	}
+
+	// Append to system prompt (first message)
+	if messages[0].Role == "system" {
+		messages[0].Content += context
+	}
+}
+
+// extractMemoryFacts uses the LLM to extract permanent facts from a conversation transcript
+func (al *AgentLoop) extractMemoryFacts(ctx context.Context, agent *AgentInstance, transcript string) ([]string, error) {
+	if agent == nil || agent.Provider == nil {
+		return nil, fmt.Errorf("no LLM provider configured on agent")
+	}
+
+	systemPrompt := `You are an AI Memory Extractor.
+Ignore all pleasantries, greetings, and filler words.
+Extract ONLY permanent, valuable facts (user traits, hardware, environment, core problems solved, decisions).
+Rewrite each fact as a standalone, 3rd-person declarative sentence.
+The output MUST be a strict JSON array of strings (e.g., ["fact 1", "fact 2"]).
+Do NOT include any markdown formatting wrappers or conversational text.`
+
+	messages := []providers.Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: transcript},
+	}
+
+	// Use the configured model for the agent, fallback to provider default
+	model := agent.Model
+	if model == "" {
+		model = agent.Provider.GetDefaultModel()
+	}
+
+	// Call the LLM with explicit options to prevent JSON truncation
+	options := map[string]any{
+		"max_tokens":  2048,
+		"temperature": 0.1,
+	}
+	resp, err := agent.Provider.Chat(ctx, messages, nil, model, options)
+	if err != nil {
+		return nil, fmt.Errorf("LLM fact extraction failed: %w", err)
+	}
+
+	if resp == nil {
+		return nil, fmt.Errorf("LLM returned nil response")
+	}
+
+	// Robust JSON parsing: locate array bounds to strip markdown
+	content := strings.TrimSpace(resp.Content)
+	startIdx := strings.Index(content, "[")
+	endIdx := strings.LastIndex(content, "]")
+
+	if startIdx == -1 || endIdx == -1 || startIdx > endIdx {
+		return nil, fmt.Errorf("no valid JSON array found in LLM response: %s", utils.Truncate(content, 100))
+	}
+
+	jsonStr := content[startIdx : endIdx+1]
+
+	var facts []string
+	if err := json.Unmarshal([]byte(jsonStr), &facts); err != nil {
+		return nil, fmt.Errorf("failed to parse facts JSON: %w (content: %s)", err, jsonStr)
+	}
+
+	return facts, nil
+}
+
+// storeInVectorMemory stores a conversation in vector memory (async)
+func (al *AgentLoop) storeInVectorMemory(ctx context.Context, agent *AgentInstance, sessionKey, userMsg, assistantMsg, channel string) {
+	if al.vectorStore == nil && al.memoryProvider == nil {
+		return
+	}
+
+	// Hard skip for heartbeat messages to prevent memory pollution
+	if sessionKey == "heartbeat" || assistantMsg == "HEARTBEAT_OK" || strings.Contains(userMsg, "Heartbeat Check") {
+		return
+	}
+
+	// Create timeout context
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second) // Increased timeout to allow LLM extraction
+	defer cancel()
+
+	// Combine user and assistant messages for embedding
+	combinedText := fmt.Sprintf("User: %s\nAssistant: %s", userMsg, assistantMsg)
+
+	// Extract clean, standalone facts
+	facts, err := al.extractMemoryFacts(ctx, agent, combinedText)
+	if err != nil {
+		logger.WarnCF("agent", "Failed to extract memory facts", map[string]any{"error": err.Error()})
+		return
+	}
+
+	if len(facts) == 0 {
+		logger.DebugCF("agent", "No extractable memory facts found in conversation turn", nil)
+		return // Nothing valuable to store
+	}
+
+	var vectors []memory.Vector
+	timestamp := time.Now().Unix()
+	createdAt := time.Now().Format(time.RFC3339)
+
+	for i, fact := range facts {
+		// Generate embedding for each individual fact ONLY if vectorStore is enabled
+		if al.vectorStore != nil && al.embeddingService != nil {
+			embedding, err := al.embeddingService.Generate(ctx, fact)
+			if err != nil {
+				logger.WarnCF("agent", "Failed to generate embedding for fact", map[string]any{"error": err.Error(), "fact": utils.Truncate(fact, 50)})
+			} else {
+				// Prevent Duplicate Vectors: Search before Upsert
+				// Create a temporary vector to search with
+				queryVec := memory.Vector{
+					Embedding: embedding,
+				}
+
+				// Search for Top 5 most similar vectors (in case there are cross-session matches)
+				searchResults, searchErr := al.vectorStore.Search(ctx, queryVec, 5)
+
+				// Check if the most similar vector is practically identical AND belongs to the same session
+				isDuplicate := false
+				if searchErr == nil && len(searchResults) > 0 {
+					for _, res := range searchResults {
+						// Handle both Qdrant (Cosine Similarity where 1.0 is exact) 
+						// and LanceDB (L2/Cosine Distance where 0.0 is exact)
+						isHighlySimilar := false
+						if res.Score > 0.95 || res.Score < 0.05 {
+							isHighlySimilar = true
+						}
+
+						if isHighlySimilar {
+							// Only deduplicate if the fact belongs to the SAME session
+							if resSession, ok := res.Metadata["session"].(string); ok && resSession == sessionKey {
+								isDuplicate = true
+								logger.DebugCF("agent", "Skipped duplicate fact (semantic deduplication)",
+									map[string]any{
+										"fact":       utils.Truncate(fact, 50),
+										"score":      res.Score,
+										"matched_id": res.ID,
+									})
+								break
+							}
+						}
+					}
+				} else if searchErr != nil {
+					logger.WarnCF("agent", "Failed to check duplicates in vector store", map[string]any{"error": searchErr.Error()})
+				}
+
+				if !isDuplicate {
+					vec := memory.Vector{
+						ID:        fmt.Sprintf("%s:%d:%d", sessionKey, time.Now().UnixNano(), i),
+						Embedding: embedding,
+						Metadata: map[string]interface{}{
+							"session":    sessionKey,
+							"channel":    channel,
+							"timestamp":  timestamp,
+							"user_msg":   userMsg,
+							"content":    fact,
+							"created_at": createdAt,
+							"original":   combinedText,
+						},
+					}
+					vectors = append(vectors, vec)
+				}
+			}
+		}
+
+		// Store in memory provider (Mem0) if enabled
+		if al.memoryProvider != nil {
+			_, err := al.memoryProvider.Store(ctx, fact, map[string]interface{}{
+				"session":  sessionKey,
+				"channel":  channel,
+				"original": combinedText,
+			})
+			if err != nil {
+				logger.WarnCF("agent", "Failed to store fact in memory provider",
+					map[string]any{"error": err.Error(), "fact": utils.Truncate(fact, 50)})
+			}
+		}
+	}
+
+	if len(vectors) == 0 && al.memoryProvider != nil {
+		logger.DebugCF("agent", "Stored facts in memory provider", map[string]any{"count": len(facts)})
+		return
+	} else if len(vectors) == 0 {
+		return
+	}
+
+	// Upsert to vector store
+	if al.vectorStore != nil {
+		err = al.vectorStore.Upsert(ctx, vectors)
+		if err != nil {
+			logger.WarnCF("agent", "Failed to store in vector memory",
+				map[string]any{"error": err.Error()})
+			return
+		}
+	}
+
+	logger.DebugCF("agent", "Stored extracted facts in vector memory",
+		map[string]any{
+			"session": sessionKey,
+			"count":   len(vectors),
+		})
 }
 
 // extractPeer extracts the routing peer from the inbound message's structured Peer field.

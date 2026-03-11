@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -8,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/memory"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
@@ -19,21 +22,54 @@ type Session struct {
 	Updated  time.Time           `json:"updated"`
 }
 
+// SessionManager manages conversation sessions with pluggable storage backend.
+// v0.2.1: Refactored to use Store interface for JSONL support
 type SessionManager struct {
 	sessions map[string]*Session
 	mu       sync.RWMutex
 	storage  string
+	store    memory.Store // v0.2.1: Pluggable storage backend
+	useStore bool         // Whether to use Store interface or legacy in-memory
 }
 
+// NewSessionManager creates a new session manager with legacy in-memory storage.
+// Deprecated: Use NewSessionManagerWithStore for production deployments.
 func NewSessionManager(storage string) *SessionManager {
 	sm := &SessionManager{
 		sessions: make(map[string]*Session),
 		storage:  storage,
+		useStore: false,
 	}
 
 	if storage != "" {
 		os.MkdirAll(storage, 0o755)
 		sm.loadSessions()
+	}
+
+	return sm
+}
+
+// NewSessionManagerWithStore creates a new session manager with pluggable storage backend.
+// v0.2.1: Use Store interface for crash-safe JSONL storage
+func NewSessionManagerWithStore(storage string, store memory.Store) *SessionManager {
+	sm := &SessionManager{
+		sessions: make(map[string]*Session),
+		storage:  storage,
+		store:    store,
+		useStore: true,
+	}
+
+	if storage != "" {
+		os.MkdirAll(storage, 0o755)
+	}
+
+	// Auto-migrate from JSON to JSONL if needed
+	if store != nil {
+		ctx := context.Background()
+		if err := memory.AutoMigrate(ctx, storage, store); err != nil {
+			logger.WarnCF("session", "Auto-migration failed",
+				map[string]any{"error": err.Error()})
+		}
 	}
 
 	return sm
@@ -60,6 +96,20 @@ func (sm *SessionManager) GetOrCreate(key string) *Session {
 }
 
 func (sm *SessionManager) AddMessage(sessionKey, role, content string) {
+	// v0.2.1: Use Store interface if available
+	if sm.useStore && sm.store != nil {
+		ctx := context.Background()
+		if err := sm.store.AddMessage(ctx, sessionKey, role, content); err != nil {
+			logger.ErrorCF("session", "Failed to add message to store",
+				map[string]any{
+					"key":   sessionKey,
+					"error": err.Error(),
+				})
+		}
+		return
+	}
+
+	// Legacy in-memory storage
 	sm.AddFullMessage(sessionKey, providers.Message{
 		Role:    role,
 		Content: content,
@@ -69,6 +119,20 @@ func (sm *SessionManager) AddMessage(sessionKey, role, content string) {
 // AddFullMessage adds a complete message with tool calls and tool call ID to the session.
 // This is used to save the full conversation flow including tool calls and tool results.
 func (sm *SessionManager) AddFullMessage(sessionKey string, msg providers.Message) {
+	// v0.2.1: Use Store interface if available
+	if sm.useStore && sm.store != nil {
+		ctx := context.Background()
+		if err := sm.store.AddFullMessage(ctx, sessionKey, msg); err != nil {
+			logger.ErrorCF("session", "Failed to add full message to store",
+				map[string]any{
+					"key":   sessionKey,
+					"error": err.Error(),
+				})
+		}
+		return
+	}
+
+	// Legacy in-memory storage
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -87,6 +151,22 @@ func (sm *SessionManager) AddFullMessage(sessionKey string, msg providers.Messag
 }
 
 func (sm *SessionManager) GetHistory(key string) []providers.Message {
+	// v0.2.1: Use Store interface if available
+	if sm.useStore && sm.store != nil {
+		ctx := context.Background()
+		history, err := sm.store.GetHistory(ctx, key)
+		if err != nil {
+			logger.ErrorCF("session", "Failed to get history from store",
+				map[string]any{
+					"key":   key,
+					"error": err.Error(),
+				})
+			return []providers.Message{}
+		}
+		return history
+	}
+
+	// Legacy in-memory storage
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 
@@ -101,6 +181,22 @@ func (sm *SessionManager) GetHistory(key string) []providers.Message {
 }
 
 func (sm *SessionManager) GetSummary(key string) string {
+	// v0.2.1: Use Store interface if available
+	if sm.useStore && sm.store != nil {
+		ctx := context.Background()
+		summary, err := sm.store.GetSummary(ctx, key)
+		if err != nil {
+			logger.ErrorCF("session", "Failed to get summary from store",
+				map[string]any{
+					"key":   key,
+					"error": err.Error(),
+				})
+			return ""
+		}
+		return summary
+	}
+
+	// Legacy in-memory storage
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 
@@ -112,6 +208,20 @@ func (sm *SessionManager) GetSummary(key string) string {
 }
 
 func (sm *SessionManager) SetSummary(key string, summary string) {
+	// v0.2.1: Use Store interface if available
+	if sm.useStore && sm.store != nil {
+		ctx := context.Background()
+		if err := sm.store.SetSummary(ctx, key, summary); err != nil {
+			logger.ErrorCF("session", "Failed to set summary in store",
+				map[string]any{
+					"key":   key,
+					"error": err.Error(),
+				})
+		}
+		return
+	}
+
+	// Legacy in-memory storage
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -123,6 +233,20 @@ func (sm *SessionManager) SetSummary(key string, summary string) {
 }
 
 func (sm *SessionManager) TruncateHistory(key string, keepLast int) {
+	// v0.2.1: Use Store interface if available
+	if sm.useStore && sm.store != nil {
+		ctx := context.Background()
+		if err := sm.store.TruncateHistory(ctx, key, keepLast); err != nil {
+			logger.ErrorCF("session", "Failed to truncate history in store",
+				map[string]any{
+					"key":   key,
+					"error": err.Error(),
+				})
+		}
+		return
+	}
+
+	// Legacy in-memory storage
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -154,7 +278,79 @@ func sanitizeFilename(key string) string {
 	return strings.ReplaceAll(key, ":", "_")
 }
 
+func (sm *SessionManager) loadSessions() error {
+	files, err := os.ReadDir(sm.storage)
+	if err != nil {
+		return err
+	}
+
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+
+		if filepath.Ext(file.Name()) != ".json" {
+			continue
+		}
+
+		sessionPath := filepath.Join(sm.storage, file.Name())
+		data, err := os.ReadFile(sessionPath)
+		if err != nil {
+			continue
+		}
+
+		var session Session
+		if err := json.Unmarshal(data, &session); err != nil {
+			continue
+		}
+
+		sm.sessions[session.Key] = &session
+	}
+
+	return nil
+}
+
+// SetHistory updates the messages of a session.
+func (sm *SessionManager) SetHistory(key string, history []providers.Message) {
+	// v0.2.1: Use Store interface if available
+	if sm.useStore && sm.store != nil {
+		ctx := context.Background()
+		if err := sm.store.SetHistory(ctx, key, history); err != nil {
+			logger.ErrorCF("session", "Failed to set history in store",
+				map[string]any{
+					"key":   key,
+					"error": err.Error(),
+				})
+		}
+		return
+	}
+
+	// Legacy in-memory storage
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	session, ok := sm.sessions[key]
+	if ok {
+		// Create a deep copy to strictly isolate internal state
+		// from the caller's slice, including nested slices
+		msgs := make([]providers.Message, len(history))
+		for i, msg := range history {
+			msgs[i] = deepCopyMessage(msg)
+		}
+		session.Messages = msgs
+		session.Updated = time.Now()
+	}
+}
+
+// Save persists a session to disk (legacy JSON format only).
+// v0.2.1: When using Store interface, saves are automatic (no-op).
 func (sm *SessionManager) Save(key string) error {
+	// v0.2.1: Store interface handles persistence automatically
+	if sm.useStore && sm.store != nil {
+		return nil
+	}
+
+	// Legacy JSON storage
 	if sm.storage == "" {
 		return nil
 	}
@@ -231,56 +427,6 @@ func (sm *SessionManager) Save(key string) error {
 	}
 	cleanup = false
 	return nil
-}
-
-func (sm *SessionManager) loadSessions() error {
-	files, err := os.ReadDir(sm.storage)
-	if err != nil {
-		return err
-	}
-
-	for _, file := range files {
-		if file.IsDir() {
-			continue
-		}
-
-		if filepath.Ext(file.Name()) != ".json" {
-			continue
-		}
-
-		sessionPath := filepath.Join(sm.storage, file.Name())
-		data, err := os.ReadFile(sessionPath)
-		if err != nil {
-			continue
-		}
-
-		var session Session
-		if err := json.Unmarshal(data, &session); err != nil {
-			continue
-		}
-
-		sm.sessions[session.Key] = &session
-	}
-
-	return nil
-}
-
-// SetHistory updates the messages of a session.
-func (sm *SessionManager) SetHistory(key string, history []providers.Message) {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-
-	session, ok := sm.sessions[key]
-	if ok {
-		// Create a deep copy to strictly isolate internal state
-		// from the caller's slice, including nested slices
-		msgs := make([]providers.Message, len(history))
-		for i, msg := range history {
-			msgs[i] = deepCopyMessage(msg)
-		}
-		session.Messages = msgs
-		session.Updated = time.Now()
-	}
 }
 
 // deepCopyMessage creates a deep copy of a Message including all nested slices

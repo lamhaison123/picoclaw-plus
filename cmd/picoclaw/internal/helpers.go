@@ -22,8 +22,15 @@ func GetConfigPath() string {
 	if configPath := os.Getenv("PICOCLAW_CONFIG"); configPath != "" {
 		return configPath
 	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".picoclaw", "config.json")
+	// v0.2.1: Use PICOCLAW_HOME if set
+	var homePath string
+	if picoclawHome := os.Getenv("PICOCLAW_HOME"); picoclawHome != "" {
+		homePath = picoclawHome
+	} else {
+		home, _ := os.UserHomeDir()
+		homePath = filepath.Join(home, ".picoclaw")
+	}
+	return filepath.Join(homePath, "config.json")
 }
 
 func LoadConfig() (*config.Config, error) {

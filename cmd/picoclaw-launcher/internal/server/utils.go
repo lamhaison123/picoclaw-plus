@@ -7,11 +7,18 @@ import (
 )
 
 func DefaultConfigPath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "config.json"
+	// v0.2.1: Use PICOCLAW_HOME if set
+	var homePath string
+	if picoclawHome := os.Getenv("PICOCLAW_HOME"); picoclawHome != "" {
+		homePath = picoclawHome
+	} else {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "config.json"
+		}
+		homePath = filepath.Join(home, ".picoclaw")
 	}
-	return filepath.Join(home, ".picoclaw", "config.json")
+	return filepath.Join(homePath, "config.json")
 }
 
 func GetLocalIP() string {

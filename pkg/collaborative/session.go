@@ -20,17 +20,18 @@ func NewSession(chatID int64, teamID string, maxContext int) *Session {
 	}
 
 	return &Session{
-		SessionID:       generateSessionID(chatID),
-		ChatID:          chatID,
-		TeamID:          teamID,
-		ActiveAgents:    make(map[string]*AgentState),
-		Context:         make([]Message, 0, maxContext),
-		StartTime:       time.Now(),
-		LastActivity:    time.Now(),
-		MaxContext:      maxContext,
-		MentionDepth:    0,
-		MaxMentionDepth: 5, // Default max depth to prevent infinite loops (increased for flexible workflows)
-		CascadeAgents:   make(map[string]bool),
+		SessionID:        generateSessionID(chatID),
+		ChatID:           chatID,
+		TeamID:           teamID,
+		ActiveAgents:     make(map[string]*AgentState),
+		Context:          make([]Message, 0, maxContext),
+		StartTime:        time.Now(),
+		LastActivity:     time.Now(),
+		MaxContext:       maxContext,
+		MentionDepth:     0,
+		MaxMentionDepth:  5, // Default max depth to prevent infinite loops (increased for flexible workflows)
+		CascadeAgents:    make(map[string]bool),
+		CompactedContext: &CompactedContext{}, // BUG FIX #18: Initialize CompactedContext
 	}
 }
 

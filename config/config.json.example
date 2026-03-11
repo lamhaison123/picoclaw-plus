@@ -1,0 +1,438 @@
+{
+  "_comment": "PicoClaw Configuration Example - All Options",
+  "_version": "v0.2.1",
+  "_docs": "See docs/reference/CONFIGURATION.md for details",
+
+  "routing": {
+    "_comment": "v0.2.1: Model routing for cost optimization",
+    "enabled": false,
+    "tiers": [
+      {
+        "name": "cheap",
+        "models": ["gpt-4o-mini", "llama-3.3-70b", "claude-3-haiku"]
+      },
+      {
+        "name": "medium",
+        "models": ["gpt-4o", "claude-3-5-sonnet"]
+      },
+      {
+        "name": "expensive",
+        "models": ["gpt-5.2", "claude-opus", "o1-preview"]
+      }
+    ],
+    "thresholds": {
+      "low": 100,
+      "medium": 500
+    }
+  },
+
+  "session": {
+    "_comment": "v0.2.1: Session management configuration",
+    "storage_backend": "jsonl",
+    "auto_migrate": true,
+    "summarization_message_threshold": 20,
+    "summarization_token_percent": 0.75
+  },
+
+  "gateway": {
+    "enabled": true,
+    "host": "0.0.0.0",
+    "port": 8080,
+    "cors": {
+      "enabled": true,
+      "allowed_origins": ["*"],
+      "allowed_methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      "allowed_headers": ["*"],
+      "allow_credentials": true
+    },
+    "rate_limit": {
+      "enabled": true,
+      "requests_per_minute": 60,
+      "burst": 10
+    },
+    "auth": {
+      "enabled": false,
+      "type": "bearer",
+      "token": ""
+    }
+  },
+
+  "agents": {
+    "defaults": {
+      "_comment": "Default settings for all agents",
+      "model": "gpt-4o",
+      "workspace": "./workspace",
+      "restrict_to_workspace": true,
+      "allow_read_outside_workspace": false,
+      "max_tokens": 32768,
+      "temperature": 0.7,
+      "max_tool_iterations": 50,
+      "max_media_size": 20971520,
+      "heartbeat_enabled": true,
+      "heartbeat_interval_ms": 5000,
+      "dm_scope": "main",
+      "fallback_models": []
+    },
+    "list": [
+      {
+        "id": "main",
+        "name": "Main Assistant",
+        "model": "gpt-4o",
+        "workspace": "./workspace",
+        "system_prompt": "You are a helpful AI assistant.",
+        "temperature": 0.7,
+        "max_tokens": 32768,
+        "is_default": true
+      },
+      {
+        "id": "code-assistant",
+        "name": "Code Assistant",
+        "model": "gpt-4o",
+        "workspace": "./workspace-code",
+        "system_prompt": "You are an expert programmer.",
+        "temperature": 0.3,
+        "max_tokens": 32768,
+        "can_spawn": ["*"]
+      }
+    ]
+  },
+
+  "model_list": [
+    {
+      "_comment": "OpenAI Models",
+      "model_name": "gpt-4o",
+      "model": "openai/gpt-4o",
+      "api_base": "https://api.openai.com/v1",
+      "api_key": "${OPENAI_API_KEY}",
+      "request_timeout": 120
+    },
+    {
+      "model_name": "gpt-4o-mini",
+      "model": "openai/gpt-4o-mini",
+      "api_base": "https://api.openai.com/v1",
+      "api_key": "${OPENAI_API_KEY}"
+    },
+    {
+      "_comment": "Anthropic Models",
+      "model_name": "claude-opus",
+      "model": "anthropic/claude-3-opus-20240229",
+      "api_base": "https://api.anthropic.com",
+      "api_key": "${ANTHROPIC_API_KEY}"
+    },
+    {
+      "model_name": "claude-3-5-sonnet",
+      "model": "anthropic/claude-3-5-sonnet-20241022",
+      "api_base": "https://api.anthropic.com",
+      "api_key": "${ANTHROPIC_API_KEY}"
+    },
+    {
+      "_comment": "DeepSeek Models",
+      "model_name": "deepseek-chat",
+      "model": "deepseek/deepseek-chat",
+      "api_base": "https://api.deepseek.com/v1",
+      "api_key": "${DEEPSEEK_API_KEY}"
+    },
+    {
+      "_comment": "Chinese Models",
+      "model_name": "qwen-max",
+      "model": "qwen/qwen-max",
+      "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "api_key": "${QWEN_API_KEY}"
+    },
+    {
+      "model_name": "glm-4",
+      "model": "zhipu/glm-4",
+      "api_base": "https://open.bigmodel.cn/api/paas/v4",
+      "api_key": "${ZHIPU_API_KEY}"
+    },
+    {
+      "model_name": "moonshot-v1",
+      "model": "moonshot/moonshot-v1-8k",
+      "api_base": "https://api.moonshot.cn/v1",
+      "api_key": "${MOONSHOT_API_KEY}"
+    }
+  ],
+
+  "tools": {
+    "_comment": "v0.2.1: Individual tool enable/disable flags",
+    "file_tools_enabled": true,
+    "shell_tools_enabled": true,
+    "web_tools_enabled": true,
+    "message_tool_enabled": true,
+    "spawn_tool_enabled": true,
+    "team_tools_enabled": true,
+    "skill_tools_enabled": true,
+    "hardware_tools_enabled": false,  z
+
+    "allow_read_paths": [],
+    "allow_write_paths": [],
+
+    "web": {
+      "_comment": "v0.2.1: New search providers added",
+      "proxy": "",
+      "fetch_limit_bytes": 10485760,
+
+      "brave": {
+        "enabled": false,
+        "api_key": "${BRAVE_API_KEY}",
+        "max_results": 5
+      },
+      "tavily": {
+        "enabled": false,
+        "api_key": "${TAVILY_API_KEY}",
+        "base_url": "https://api.tavily.com",
+        "max_results": 5
+      },
+      "duckduckgo": {
+        "enabled": true,
+        "max_results": 5
+      },
+      "perplexity": {
+        "enabled": false,
+        "api_key": "${PERPLEXITY_API_KEY}",
+        "max_results": 5
+      },
+      "searxng": {
+        "_comment": "v0.2.1: Privacy-focused metasearch",
+        "enabled": false,
+        "base_url": "https://searx.example.com",
+        "max_results": 5
+      },
+      "glm": {
+        "_comment": "v0.2.1: Chinese search by Zhipu AI",
+        "enabled": false,
+        "api_key": "${GLM_API_KEY}",
+        "max_results": 5
+      },
+      "exa": {
+        "_comment": "v0.2.1: AI-powered semantic search",
+        "enabled": false,
+        "api_key": "${EXA_API_KEY}",
+        "max_results": 5
+      }
+    },
+
+    "cron": {
+      "exec_timeout_minutes": 30
+    },
+
+    "exec": {
+      "enable_deny_patterns": true,
+      "custom_deny_patterns": [],
+      "custom_allow_patterns": [],
+      "safety_level": "moderate"
+    },
+
+    "skills": {
+      "registries": {
+        "clawhub": {
+          "enabled": true,
+          "url": "https://clawhub.example.com",
+          "api_key": ""
+        }
+      },
+      "max_concurrent_searches": 3,
+      "search_cache": {
+        "max_size": 100,
+        "ttl_seconds": 3600
+      }
+    },
+
+    "media_cleanup": {
+      "enabled": true,
+      "max_age_minutes": 60,
+      "interval_minutes": 30
+    },
+
+    "mcp": {
+      "enabled": false,
+      "servers": {}
+    }
+  },
+
+  "channels": {
+    "telegram": {
+      "enabled": false,
+      "bot_token": "${TELEGRAM_BOT_TOKEN}",
+      "allowed_users": [],
+      "allowed_chats": []
+    },
+    "discord": {
+      "enabled": false,
+      "bot_token": "${DISCORD_BOT_TOKEN}",
+      "application_id": "",
+      "allowed_guilds": [],
+      "allowed_channels": []
+    },
+    "slack": {
+      "enabled": false,
+      "bot_token": "${SLACK_BOT_TOKEN}",
+      "app_token": "${SLACK_APP_TOKEN}",
+      "signing_secret": "${SLACK_SIGNING_SECRET}"
+    },
+    "wecom": {
+      "enabled": false,
+      "corp_id": "",
+      "agent_id": "",
+      "secret": "${WECOM_SECRET}",
+      "token": "",
+      "encoding_aes_key": ""
+    },
+    "feishu": {
+      "enabled": false,
+      "app_id": "",
+      "app_secret": "${FEISHU_APP_SECRET}",
+      "verification_token": "",
+      "encrypt_key": ""
+    },
+    "dingtalk": {
+      "enabled": false,
+      "app_key": "",
+      "app_secret": "${DINGTALK_APP_SECRET}",
+      "robot_code": ""
+    },
+    "qq": {
+      "enabled": false,
+      "app_id": "",
+      "token": "${QQ_TOKEN}",
+      "secret": "${QQ_SECRET}"
+    },
+    "line": {
+      "enabled": false,
+      "channel_secret": "${LINE_CHANNEL_SECRET}",
+      "channel_access_token": "${LINE_CHANNEL_ACCESS_TOKEN}"
+    },
+    "whatsapp": {
+      "enabled": false,
+      "phone_number_id": "",
+      "access_token": "${WHATSAPP_ACCESS_TOKEN}",
+      "verify_token": "${WHATSAPP_VERIFY_TOKEN}"
+    },
+    "maixcam": {
+      "enabled": false,
+      "device_id": "",
+      "api_key": "${MAIXCAM_API_KEY}"
+    }
+  },
+
+  "session": {
+    "dm_scope": "per-peer"
+  },
+  "memory": {
+    "enabled": true,
+    "embedding": {
+      "provider": "openai",
+      "model": "text-embedding-3-small",
+      "dimension": 1536,
+      "api_key": "${OPENAI_API_KEY}",
+      "base_url": "https://api.openai.com/v1"
+    },
+    "vector_store": {
+      "provider": "qdrant",
+      "timeout_ms": 1200,
+      "qdrant": {
+        "enabled": true,
+        "url": "http://localhost:6333",
+        "api_key": "",
+        "collection": "picoclaw_vectors",
+        "dimension": 384,
+        "timeout_ms": 800
+      },
+      "_comment": "LanceDB is an embedded vector database, ideal for local development or small-scale deployments.",
+      "lancedb": {
+        "enabled": true,
+        "mode": "cgo",
+        "path": "/root/.picoclaw/workspace/memory/lancedb",
+        "url": "http://localhost:8000",
+        "dataset": "picoclaw",
+        "timeout_ms": 800
+      }
+    },
+    "memory_provider": {
+      "provider": "sidecar",
+      "sidecar": {
+        "endpoint": "http://localhost:8765",
+        "timeout_ms": 1200,
+        "circuit_breaker": {
+          "max_failures": 5,
+          "reset_timeout_s": 60
+        }
+      },
+      "mem0": {
+        "enabled": true,
+        "_comment": "Personalized memory for AI agents",
+        "_self_hosted": "http://localhost:8001",
+        "_cloud": "https://api.mem0.ai",
+        "url": "https://api.mem0.ai",
+        "api_key": "${MEM0_API_KEY}",
+        "timeout_ms": 1200
+      },
+      "mindgraph": {
+        "_comment": "Knowledge graph memory for AI agents",
+        "_self_hosted": "http://localhost:8002",
+        "_cloud": "https://api.mindgraph.cloud",
+        "url": "http://localhost:8002",
+        "api_key": "${MINDGRAPH_API_KEY}",
+        "timeout_ms": 1200
+      }
+    },
+    "cache": {
+      "enabled": true,
+      "max_entries": 1000,
+      "ttl_seconds": 3600
+    }
+  },
+
+  "embedding": {
+    "provider": "openai",
+    "model": "text-embedding-3-small",
+    "dimension": 384,
+    "api_key": "${OPENAI_API_KEY}",
+    "base_url": "https://api.openai.com/v1"
+  },
+
+  "team": {
+    "enabled": false,
+    "max_concurrent_tasks": 5,
+    "task_timeout_minutes": 30,
+    "persistence": {
+      "enabled": true,
+      "directory": "./teams"
+    }
+  },
+
+  "collaborative": {
+    "enabled": false,
+    "max_cascade_depth": 3,
+    "mention_timeout_ms": 30000,
+    "rate_limit": {
+      "enabled": true,
+      "max_mentions_per_minute": 10
+    }
+  },
+
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "output": "stdout",
+    "file": {
+      "enabled": false,
+      "path": "./logs/picoclaw.log",
+      "max_size_mb": 100,
+      "max_backups": 3,
+      "max_age_days": 7
+    }
+  },
+
+  "metrics": {
+    "enabled": false,
+    "port": 9090,
+    "path": "/metrics"
+  },
+
+  "health": {
+    "enabled": true,
+    "port": 8081,
+    "path": "/health"
+  }
+}

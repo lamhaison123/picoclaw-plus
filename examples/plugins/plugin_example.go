@@ -39,10 +39,10 @@ func main() {
 
 	// Plugin metadata
 	metadata := &plugins.PluginMetadata{
-		Name:        "math_plugin",
-		Version:     "1.0.0",
-		Description: "Simple math operations plugin",
-		Author:      "PicoClaw Team",
+		Name:         "math_plugin",
+		Version:      "1.0.0",
+		Description:  "Simple math operations plugin",
+		Author:       "PicoClaw Team",
 		Capabilities: []string{"add", "subtract", "multiply", "divide", "factorial", "fibonacci", "power"},
 	}
 
@@ -57,7 +57,7 @@ func main() {
 
 	// Test add function
 	fmt.Println("Testing add(5, 7)...")
-	result, err := pm.runtime.CallFunction(ctx, "math_plugin", "add", 5, 7)
+	result, err := pm.CallFunction(ctx, "math_plugin", "add", 5, 7)
 	if err != nil {
 		log.Fatalf("Failed to call add: %v", err)
 	}
@@ -65,7 +65,7 @@ func main() {
 
 	// Test subtract function
 	fmt.Println("Testing subtract(10, 3)...")
-	result, err = pm.runtime.CallFunction(ctx, "math_plugin", "subtract", 10, 3)
+	result, err = pm.CallFunction(ctx, "math_plugin", "subtract", 10, 3)
 	if err != nil {
 		log.Fatalf("Failed to call subtract: %v", err)
 	}
@@ -73,7 +73,7 @@ func main() {
 
 	// Test multiply function
 	fmt.Println("Testing multiply(6, 7)...")
-	result, err = pm.runtime.CallFunction(ctx, "math_plugin", "multiply", 6, 7)
+	result, err = pm.CallFunction(ctx, "math_plugin", "multiply", 6, 7)
 	if err != nil {
 		log.Fatalf("Failed to call multiply: %v", err)
 	}
@@ -81,7 +81,7 @@ func main() {
 
 	// Test divide function
 	fmt.Println("Testing divide(20, 4)...")
-	result, err = pm.runtime.CallFunction(ctx, "math_plugin", "divide", 20, 4)
+	result, err = pm.CallFunction(ctx, "math_plugin", "divide", 20, 4)
 	if err != nil {
 		log.Fatalf("Failed to call divide: %v", err)
 	}
@@ -89,7 +89,7 @@ func main() {
 
 	// Test factorial function
 	fmt.Println("Testing factorial(5)...")
-	result, err = pm.runtime.CallFunction(ctx, "math_plugin", "factorial", 5)
+	result, err = pm.CallFunction(ctx, "math_plugin", "factorial", 5)
 	if err != nil {
 		log.Fatalf("Failed to call factorial: %v", err)
 	}
@@ -97,7 +97,7 @@ func main() {
 
 	// Test fibonacci function
 	fmt.Println("Testing fibonacci(10)...")
-	result, err = pm.runtime.CallFunction(ctx, "math_plugin", "fibonacci", 10)
+	result, err = pm.CallFunction(ctx, "math_plugin", "fibonacci", 10)
 	if err != nil {
 		log.Fatalf("Failed to call fibonacci: %v", err)
 	}
@@ -105,7 +105,7 @@ func main() {
 
 	// Test power function
 	fmt.Println("Testing power(2, 8)...")
-	result, err = pm.runtime.CallFunction(ctx, "math_plugin", "power", 2, 8)
+	result, err = pm.CallFunction(ctx, "math_plugin", "power", 2, 8)
 	if err != nil {
 		log.Fatalf("Failed to call power: %v", err)
 	}

@@ -122,7 +122,7 @@ func (r *RouteResolver) filterBindings(channel, accountID string) []config.Agent
 	var filtered []config.AgentBinding
 	for _, b := range r.cfg.Bindings {
 		matchChannel := strings.ToLower(strings.TrimSpace(b.Match.Channel))
-		if matchChannel == "" || matchChannel != channel {
+		if matchChannel != "" && matchChannel != channel {
 			continue
 		}
 		if !matchesAccountID(b.Match.AccountID, accountID) {
@@ -141,7 +141,7 @@ func matchesAccountID(matchAccountID, actual string) bool {
 	if trimmed == "*" {
 		return true
 	}
-	return strings.ToLower(trimmed) == strings.ToLower(actual)
+	return strings.EqualFold(trimmed, actual)
 }
 
 func (r *RouteResolver) findPeerMatch(bindings []config.AgentBinding, peer *RoutePeer) *config.AgentBinding {

@@ -77,6 +77,17 @@ func gatewayCmd(debug bool) error {
 	teamMemory := memory.NewTeamMemory(cfg.WorkspacePath())
 	teamManager.SetTeamMemory(teamMemory)
 
+	// Set team manager into agent loop to enable team delegation tools
+	// Use adapter to convert team.TeamManager to tools.TeamManager interface
+	agentLoop.SetTeamManager(tools.NewTeamManagerAdapter(teamManager))
+
+	// Auto-discover and load team definitions from workspace/teams/
+	if err := loadTeamDefinitions(context.Background(), teamManager, cfg.WorkspacePath()); err != nil {
+		logger.WarnCF("gateway", "Failed to load team definitions", map[string]any{
+			"error": err.Error(),
+		})
+	}
+
 	// Print agent startup info
 	fmt.Println("\n📦 Agent Status:")
 	startupInfo := agentLoop.GetStartupInfo()
@@ -256,4 +267,65 @@ func setupCronTool(
 	})
 
 	return cronService
+}
+
+// loadTeamDefinitions auto-discovers and loads team definitions from workspace/teams/
+func loadTeamDefinitions(ctx context.Context, tm *team.TeamManager, workspace string) error {
+	teamsDir := filepath.Join(workspace, "teams")
+
+	// Check if teams directory exists
+	if _, err := os.Stat(teamsDir); os.IsNotExist(err) {
+		logger.InfoC("gateway", "No teams directory found, skipping team auto-discovery")
+		return nil
+	}
+
+	// Scan for team definition files
+	entries, err := os.ReadDir(teamsDir)
+	if err != nil {
+		return fmt.Errorf("failed to read teams directory: %w", err)
+	}
+
+	loadedCount := 0
+	for _, entry := range entries {
+		// Look for .json files in teams directory
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+
+		configPath := filepath.Join(teamsDir, entry.Name())
+
+		// Load team configuration
+		teamConfig, err := team.LoadTeamConfig(configPath)
+		if err != nil {
+			logger.WarnCF("gateway", "Failed to load team config", map[string]any{
+				"file":  entry.Name(),
+				"error": err.Error(),
+			})
+			continue
+		}
+
+		// Create team from configuration
+		_, err = tm.CreateTeam(ctx, teamConfig)
+		if err != nil {
+			logger.WarnCF("gateway", "Failed to create team", map[string]any{
+				"team_id": teamConfig.TeamID,
+				"error":   err.Error(),
+			})
+			continue
+		}
+
+		logger.InfoCF("gateway", "Team loaded successfully", map[string]any{
+			"team_id":   teamConfig.TeamID,
+			"team_name": teamConfig.Name,
+			"pattern":   teamConfig.Pattern,
+			"roles":     len(teamConfig.Roles),
+		})
+		loadedCount++
+	}
+
+	if loadedCount > 0 {
+		fmt.Printf("✓ Teams loaded: %d\n", loadedCount)
+	}
+
+	return nil
 }

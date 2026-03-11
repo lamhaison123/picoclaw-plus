@@ -139,6 +139,7 @@ func (tm *TeamManager) CreateTeam(ctx context.Context, teamConfig *TeamConfig) (
 
 	// Build role-to-capabilities mapping (team-specific, stored in team config)
 	// Note: roleCapabilities is shared across teams, so we use composite keys
+	// Lock is already held by CreateTeam, so this is safe from race conditions
 	for _, roleConfig := range teamConfig.Roles {
 		compositeKey := fmt.Sprintf("%s:%s", teamConfig.TeamID, roleConfig.Name)
 		tm.roleCapabilities[compositeKey] = roleConfig.Capabilities
@@ -236,9 +237,8 @@ func (tm *TeamManager) CreateTeam(ctx context.Context, teamConfig *TeamConfig) (
 	// Persist team state to disk
 	if err := tm.SaveTeamState(team); err != nil {
 		// Rollback: remove team from map on persistence failure
-		tm.mu.Lock()
+		// Note: Already holding tm.mu.Lock() from line 116, no need to lock again
 		delete(tm.teams, team.ID)
-		tm.mu.Unlock()
 
 		logger.ErrorCF("team", "Failed to save team state, rolling back team creation",
 			map[string]any{
@@ -289,6 +289,9 @@ func (tm *TeamManager) DissolveTeam(ctx context.Context, teamID string) error {
 	if team.SharedContext != nil {
 		team.SharedContext = nil
 	}
+
+	// Note: Coordinators are created per-task in ExecuteTask with defer Shutdown(),
+	// so no need to shutdown here. They are not stored in the Team struct.
 
 	// Deregister all agents from Agent Registry
 	for agentID := range team.Agents {
@@ -1079,7 +1082,18 @@ func (tm *TeamManager) ExecuteTask(ctx context.Context, teamID string, taskDescr
 		router,
 		ctx, // Pass context for goroutine lifecycle
 	)
+
+	// BUG FIX: Check if coordinator creation failed
+	if coordinator == nil {
+		return nil, fmt.Errorf("failed to create coordinator for team '%s'", teamID)
+	}
+
 	defer coordinator.Shutdown() // Ensure cleanup of background goroutines
+
+	// BUG FIX #4: Check if agentExecutor is nil before setting
+	if tm.agentExecutor == nil {
+		return nil, fmt.Errorf("agent executor not configured for team manager")
+	}
 
 	// Set executor
 	coordinator.Executor = tm.agentExecutor
@@ -1167,7 +1181,18 @@ func (tm *TeamManager) ExecuteTaskWithRole(ctx context.Context, teamID string, t
 		router,
 		ctx,
 	)
+
+	// BUG FIX: Check if coordinator creation failed
+	if coordinator == nil {
+		return nil, fmt.Errorf("failed to create coordinator for team '%s'", teamID)
+	}
+
 	defer coordinator.Shutdown() // Ensure cleanup of background goroutines
+
+	// BUG FIX #4: Check if agentExecutor is nil before setting
+	if tm.agentExecutor == nil {
+		return nil, fmt.Errorf("agent executor not configured for team manager")
+	}
 
 	// Set executor
 	coordinator.Executor = tm.agentExecutor
@@ -1220,4 +1245,21 @@ func (tm *TeamManager) ExecuteTaskWithRole(ctx context.Context, teamID string, t
 		})
 
 	return result, nil
+}
+
+// GetAllTeamsAsInterface returns all teams as map[string]interface{} for tool compatibility
+func (tm *TeamManager) GetAllTeamsAsInterface() map[string]interface{} {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+
+	result := make(map[string]interface{}, len(tm.teams))
+	for id, team := range tm.teams {
+		result[id] = team
+	}
+	return result
+}
+
+// GetTeamStatusAsInterface returns team status as interface{} for tool compatibility
+func (tm *TeamManager) GetTeamStatusAsInterface(teamID string) (interface{}, error) {
+	return tm.GetTeamStatus(teamID)
 }

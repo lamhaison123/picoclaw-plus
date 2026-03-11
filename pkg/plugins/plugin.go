@@ -13,28 +13,28 @@ import (
 type Plugin interface {
 	// Name returns the plugin name
 	Name() string
-	
+
 	// Version returns the plugin version
 	Version() string
-	
+
 	// Initialize initializes the plugin
 	Initialize(ctx context.Context) error
-	
+
 	// Execute executes the plugin with input data
 	Execute(ctx context.Context, input []byte) ([]byte, error)
-	
+
 	// Cleanup cleans up plugin resources
 	Cleanup(ctx context.Context) error
 }
 
 // PluginMetadata contains plugin metadata
 type PluginMetadata struct {
-	Name        string            `json:"name"`
-	Version     string            `json:"version"`
-	Description string            `json:"description"`
-	Author      string            `json:"author"`
-	Capabilities []string         `json:"capabilities"`
-	Config      map[string]string `json:"config,omitempty"`
+	Name         string            `json:"name"`
+	Version      string            `json:"version"`
+	Description  string            `json:"description"`
+	Author       string            `json:"author"`
+	Capabilities []string          `json:"capabilities"`
+	Config       map[string]string `json:"config,omitempty"`
 }
 
 // PluginManager manages multiple plugins
@@ -64,6 +64,11 @@ func (pm *PluginManager) LoadPlugin(ctx context.Context, metadata *PluginMetadat
 
 	pm.plugins[metadata.Name] = metadata
 	return nil
+}
+
+// CallFunction calls an exported function from a loaded plugin via the runtime.
+func (pm *PluginManager) CallFunction(ctx context.Context, pluginName, funcName string, args ...uint64) ([]uint64, error) {
+	return pm.runtime.CallFunction(ctx, pluginName, funcName, args...)
 }
 
 // UnloadPlugin unloads a plugin

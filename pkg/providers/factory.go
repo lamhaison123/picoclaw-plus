@@ -212,12 +212,12 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			if sel.apiBase == "" {
 				sel.apiBase = "https://api.moonshot.cn/v1"
 			}
-		case strings.HasPrefix(model, "openrouter/") ||
+		case (strings.HasPrefix(model, "openrouter/") ||
 			strings.HasPrefix(model, "anthropic/") ||
 			strings.HasPrefix(model, "openai/") ||
 			strings.HasPrefix(model, "meta-llama/") ||
 			strings.HasPrefix(model, "deepseek/") ||
-			strings.HasPrefix(model, "google/"):
+			strings.HasPrefix(model, "google/")) && cfg.Providers.OpenRouter.APIKey != "":
 			sel.apiKey = cfg.Providers.OpenRouter.APIKey
 			sel.proxy = cfg.Providers.OpenRouter.Proxy
 			if cfg.Providers.OpenRouter.APIBase != "" {

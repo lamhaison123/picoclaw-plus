@@ -363,9 +363,9 @@ func TestCoordinatorAgent_SetTaskTimeout(t *testing.T) {
 
 	coordinator := NewCoordinatorAgent("coordinator1", "team1", team, PatternSequential, messageBus, delegationRouter, ctx)
 
-	// Default timeout
-	if coordinator.taskTimeout != 60*time.Second {
-		t.Errorf("Expected default timeout 60s, got %v", coordinator.taskTimeout)
+	// Default timeout (increased to 270s per architecture review to prevent parent timeout before child operations complete)
+	if coordinator.taskTimeout != 270*time.Second {
+		t.Errorf("Expected default timeout 270s, got %v", coordinator.taskTimeout)
 	}
 
 	// Set custom timeout
@@ -844,7 +844,6 @@ func TestCoordinatorAgent_ReassignTask_InvalidAgent(t *testing.T) {
 	coordinator := NewCoordinatorAgent("coordinator1", "team1", team, PatternHierarchical, messageBus, delegationRouter, ctx)
 
 	task := NewTask("Test task", "developer", nil)
-
 
 	// Try to reassign to non-existent agent
 	err := coordinator.ReassignTask(ctx, task, "nonexistent")

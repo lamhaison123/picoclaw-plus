@@ -16,7 +16,7 @@ LDFLAGS=-ldflags "-X $(INTERNAL).version=$(VERSION) -X $(INTERNAL).gitCommit=$(G
 
 # Go variables
 GO?=CGO_ENABLED=0 go
-GOFLAGS?=-v -tags stdjson
+#GOFLAGS?=-v -tags "stdjson no_qdrant"
 
 # Golangci-lint
 GOLANGCI_LINT?=golangci-lint

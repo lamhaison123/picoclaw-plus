@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/memory"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/session"
@@ -68,6 +69,9 @@ func NewAgentInstance(
 	fallbacks := resolveAgentFallbacks(agentCfg, defaults)
 
 	restrict := defaults.RestrictToWorkspace
+	if agentCfg != nil && agentCfg.RestrictToWorkspace != nil {
+		restrict = *agentCfg.RestrictToWorkspace
+	}
 	readRestrict := restrict && !defaults.AllowReadOutsideWorkspace
 
 	// Compile path whitelist patterns from config.
@@ -75,20 +79,40 @@ func NewAgentInstance(
 	allowWritePaths := compilePatterns(cfg.Tools.AllowWritePaths)
 
 	toolsRegistry := tools.NewToolRegistry()
-	toolsRegistry.Register(tools.NewReadFileTool(workspace, readRestrict, allowReadPaths))
-	toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
-	toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
-	execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg)
-	if err != nil {
-		log.Fatalf("Critical error: unable to initialize exec tool: %v", err)
-	}
-	toolsRegistry.Register(execTool)
 
-	toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
-	toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
+	// v0.2.1: Register file tools only if enabled
+	if cfg.Tools.FileToolsEnabled {
+		toolsRegistry.Register(tools.NewReadFileTool(workspace, readRestrict, allowReadPaths))
+		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
+		toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
+		toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
+		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
+	}
+
+	// v0.2.1: Register shell tool only if enabled
+	if cfg.Tools.ShellToolsEnabled {
+		execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg)
+		if err != nil {
+			log.Fatalf("Critical error: unable to initialize exec tool: %v", err)
+		}
+		toolsRegistry.Register(execTool)
+	}
 
 	sessionsDir := filepath.Join(workspace, "sessions")
-	sessionsManager := session.NewSessionManager(sessionsDir)
+
+	// v0.2.1: Use JSONL store if configured, otherwise legacy JSON
+	var sessionsManager *session.SessionManager
+	if cfg.Session.StorageBackend == "jsonl" {
+		// Create JSONL store for crash-safe storage
+		store, err := memory.NewJSONLStore(sessionsDir)
+		if err != nil {
+			log.Fatalf("Critical error: unable to initialize JSONL store: %v", err)
+		}
+		sessionsManager = session.NewSessionManagerWithStore(sessionsDir, store)
+	} else {
+		// Legacy JSON storage (backward compatible)
+		sessionsManager = session.NewSessionManager(sessionsDir)
+	}
 
 	contextBuilder := NewContextBuilder(workspace)
 
@@ -194,9 +218,16 @@ func resolveAgentWorkspace(agentCfg *config.AgentConfig, defaults *config.AgentD
 	if agentCfg == nil || agentCfg.Default || agentCfg.ID == "" || routing.NormalizeAgentID(agentCfg.ID) == "main" {
 		return expandHome(defaults.Workspace)
 	}
-	home, _ := os.UserHomeDir()
+	// v0.2.1: Use PICOCLAW_HOME if set
+	var homePath string
+	if picoclawHome := os.Getenv("PICOCLAW_HOME"); picoclawHome != "" {
+		homePath = picoclawHome
+	} else {
+		home, _ := os.UserHomeDir()
+		homePath = filepath.Join(home, ".picoclaw")
+	}
 	id := routing.NormalizeAgentID(agentCfg.ID)
-	return filepath.Join(home, ".picoclaw", "workspace-"+id)
+	return filepath.Join(homePath, "workspace-"+id)
 }
 
 // resolveAgentModel resolves the primary model for an agent.

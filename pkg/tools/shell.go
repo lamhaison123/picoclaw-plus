@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -316,17 +317,29 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 
 	done := make(chan error, 1)
 	waitCtx, waitCancel := context.WithCancel(context.Background())
-	defer waitCancel() // Ensure goroutine cleanup
+
+	// Track if we've already called waitCancel to avoid double cancellation
+	var cancelOnce sync.Once
+
+	// Use a WaitGroup to ensure proper goroutine cleanup
+	var wg sync.WaitGroup
+	wg.Add(1)
 
 	go func() {
+		defer wg.Done()
 		defer func() {
 			// Ensure we don't panic if channel is somehow closed
 			recover()
 		}()
 
-		// Create a timeout for cmd.Wait() to prevent indefinite blocking
+		// Create inner context with timeout for cmd.Wait()
+		innerCtx, innerCancel := context.WithTimeout(waitCtx, 300*time.Second)
+		defer innerCancel()
+
 		waitDone := make(chan error, 1)
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			waitDone <- cmd.Wait()
 		}()
 
@@ -337,13 +350,28 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 			case <-waitCtx.Done():
 				// Parent cancelled, exit goroutine
 			}
-		case <-waitCtx.Done():
-			// Parent cancelled, exit goroutine
+		case <-innerCtx.Done():
+			// Timeout or parent cancelled
+			if innerCtx.Err() == context.DeadlineExceeded {
+				logger.WarnC("shell", "cmd.Wait() blocked for 300s, forcing goroutine exit")
+			}
 			return
+		}
+	}()
+
+	// Ensure all goroutines are cleaned up before returning
+	defer func() {
+		cancelOnce.Do(func() { waitCancel() })
+		// Wait for goroutines with timeout to prevent indefinite blocking
+		cleanupDone := make(chan struct{})
+		go func() {
+			wg.Wait()
+			close(cleanupDone)
+		}()
+		select {
+		case <-cleanupDone:
 		case <-time.After(5 * time.Second):
-			// Force exit after 5 seconds to prevent goroutine leak
-			logger.WarnC("shell", "cmd.Wait() blocked for 5s, forcing goroutine exit")
-			return
+			logger.WarnC("shell", "Goroutine cleanup timed out after 5s")
 		}
 	}()
 
@@ -367,7 +395,7 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 			case err = <-done:
 			case <-time.After(1 * time.Second):
 				// Goroutine still blocked, cancel it to prevent leak
-				waitCancel()
+				cancelOnce.Do(func() { waitCancel() })
 				err = fmt.Errorf("process kill timeout")
 			}
 		}

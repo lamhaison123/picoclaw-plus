@@ -61,9 +61,16 @@ func NewCoordinatorAgent(agentID, teamID string, team *Team, pattern Collaborati
 }
 
 // Shutdown gracefully shuts down the coordinator and stops all background goroutines
+// This MUST be called when the coordinator is no longer needed to prevent goroutine leaks
+// The shutdown will:
+// 1. Cancel the cleanup goroutine context
+// 2. Stop the periodic task result cleanup
+// 3. Allow the cleanup goroutine to exit gracefully
+// This method is safe to call multiple times.
 func (c *CoordinatorAgent) Shutdown() {
 	if c.shutdownCancel != nil {
 		c.shutdownCancel()
+		c.shutdownCancel = nil // Prevent double cancellation
 	}
 }
 
@@ -239,16 +246,16 @@ func (c *CoordinatorAgent) DelegateAndWait(ctx context.Context, task *Task) (*Ta
 	// Wait for result with timeout
 	resultChan := make(chan *TaskResultMessage, 1)
 	errorChan := make(chan error, 1)
-	
+
 	goroutineCtx, goroutineCancel := context.WithCancel(context.Background())
 	defer goroutineCancel() // Ensure goroutine exits
-	
+
 	go func() {
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
-		
+
 		timeout := time.After(c.taskTimeout)
-		
+
 		for {
 			select {
 			case <-goroutineCtx.Done():
@@ -269,7 +276,7 @@ func (c *CoordinatorAgent) DelegateAndWait(ctx context.Context, task *Task) (*Ta
 				c.mu.RLock()
 				result, ok := c.taskResults[task.ID]
 				c.mu.RUnlock()
-				
+
 				if ok {
 					select {
 					case resultChan <- result:
@@ -280,10 +287,10 @@ func (c *CoordinatorAgent) DelegateAndWait(ctx context.Context, task *Task) (*Ta
 			}
 		}
 	}()
-	
+
 	var result *TaskResultMessage
 	var waitErr error
-	
+
 	select {
 	case result = <-resultChan:
 		waitErr = nil

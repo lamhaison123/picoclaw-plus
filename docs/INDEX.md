@@ -1,213 +1,194 @@
 # PicoClaw Documentation Index
 
-Welcome to PicoClaw documentation! This index helps you find the right documentation for your needs.
-
----
+Welcome to PicoClaw documentation! This guide will help you navigate through all available documentation.
 
 ## 🚀 Quick Start
 
-New to PicoClaw? Start here:
+**New to PicoClaw?** → [QUICK_START.md](./QUICK_START.md) - Fast-track guide based on your role
 
-1. [README](../README.md) - Project overview and quick start
-2. [Installation Guide](../README.md#-quick-start) - Get PicoClaw running
-3. [Configuration Guide](../config/README.md) - Configure your setup
+## 📚 Documentation Structure
 
----
+```
+docs/
+├── architecture/     # System architecture and design
+├── guides/          # User guides and tutorials
+├── reference/       # API and configuration reference
+├── development/     # Development and troubleshooting
+├── channels/        # Platform-specific channel docs
+├── memory/          # Memory system documentation
+├── skills/          # Skills and plugins
+├── design/          # Design documents and RFCs
+└── migration/       # Migration guides
+```
 
-## 📚 Core Documentation
+## 🏗️ Architecture
+
+Understanding PicoClaw's internal design and structure.
+
+- **[Architecture Overview](./architecture/ARCHITECTURE_OVERVIEW.md)** - Complete system architecture
+- **[Component Details](./architecture/COMPONENT_DETAILS.md)** - Detailed component specifications
+- **[Data Flow](./architecture/DATA_FLOW.md)** - Message processing flows
+- **[Codebase Overview](./architecture/CODEBASE_OVERVIEW.md)** - Code organization
+- **[Repository Overview](./architecture/REPOSITORY_OVERVIEW.md)** - Repository structure (EN)
+- **[Repository Overview (VI)](./architecture/REPOSITORY_OVERVIEW.vi.md)** - Repository structure (Vietnamese)
+
+## 📖 User Guides
+
+Step-by-step guides for using PicoClaw features.
+
+### v0.2.1 Features (NEW)
+- **[v0.2.1 Features](./guides/V0.2.1_FEATURES.md)** - Complete guide to all v0.2.1 features
+- **[Vision Support](./guides/VISION_SUPPORT.md)** - Multi-modal AI with images
+- **[Model Routing](./guides/MODEL_ROUTING.md)** - Cost optimization
 
 ### Getting Started
-- [Repository Overview](REPOSITORY_OVERVIEW.md) - Project structure and architecture
-- [Codebase Overview](CODEBASE_OVERVIEW.md) - Complete codebase structure and components
-- [Architecture](ARCHITECTURE.md) - System architecture and design principles
-- [Contributing Guide](../CONTRIBUTING.md) - How to contribute
-- [Changelog](../CHANGELOG.md) - Version history
+- **[Multi-Agent Guide](./guides/MULTI_AGENT_GUIDE.md)** - Working with multiple agents
+- **[Collaborative Chat](./guides/COLLABORATIVE_CHAT.md)** - Multi-agent conversations
+- **[Collaborative Chat Quickstart](./guides/COLLABORATIVE_CHAT_QUICKSTART.md)** - Quick setup
 
-### Bug Fixes & Quality (v1.1.1+fixes)
-- [Completion Report](../COMPLETION_REPORT.md) - Comprehensive summary of all fixes
-- [Code Review Report](../CODE_REVIEW_REPORT.md) - Original findings (26 issues)
-- [Critical Fixes Summary](../CRITICAL_FIXES_SUMMARY.md) - Critical issues resolved
-- [All Fixes Summary](../ALL_FIXES_SUMMARY.md) - Complete fixes overview
-- [Final Fix Report](../FINAL_FIX_REPORT.md) - Test results and verification
+### Team Features
+- **[Team Agent Usage](./guides/TEAM_AGENT_USAGE.md)** - Using team delegation
+- **[Safety Quickstart](./guides/SAFETY_QUICKSTART.md)** - Security configuration
 
-### Development
-- [Developer Guide](DEVELOPER_GUIDE.md) - Development setup and guidelines
-- [API Reference](API_REFERENCE.md) - Complete API documentation
+### Advanced Features
+- **[Antigravity Usage](./guides/ANTIGRAVITY_USAGE.md)** - Cloud integration
+- **[Systemd Quick Reference](./guides/SYSTEMD_QUICK_REFERENCE.md)** - Linux service setup
+- **[Compaction Quick Reference](./guides/COMPACTION_QUICK_REFERENCE.md)** - Memory compaction
 
-### Multi-Agent System
-- [Multi-Agent Guide](MULTI_AGENT_GUIDE.md) - Complete guide to multi-agent collaboration
-- [Team Agent Usage](TEAM_AGENT_USAGE.md) - Using team agents
-- [Team Tool Access](TEAM_TOOL_ACCESS.md) - Tool access control
-- [Model Selection](MULTI_AGENT_MODEL_SELECTION.md) - Per-role model configuration
+## 📋 Reference
 
-### Collaborative Chat
-- [Collaborative Chat Guide](COLLABORATIVE_CHAT.md) - Complete IRC-style chat guide
-- [Quick Start](COLLABORATIVE_CHAT_QUICKSTART.md) - 5-minute setup
-- [Architecture](COLLABORATIVE_CHAT_ARCHITECTURE.md) - Technical architecture
-- [Message Flow](COLLABORATIVE_CHAT_FLOW.txt) - Flow diagram
+API documentation and configuration references.
 
-### Security & Safety
-- [Safety Levels](SAFETY_LEVELS.md) - 4-level safety system
-- [Safety Quick Start](SAFETY_QUICKSTART.md) - Quick reference
-- [Tool Configuration](tools_configuration.md) - Configure tool safety
+### v0.2.1 Features (NEW)
+- **[JSONL Storage](./reference/JSONL_STORAGE.md)** - Crash-safe storage
+- **[Search Providers](./reference/SEARCH_PROVIDERS.md)** - All 7 search providers
+- **[PICOCLAW_HOME](./reference/PICOCLAW_HOME.md)** - Custom home directory
+- **[MindGraph Integration](./reference/MINDGRAPH_INTEGRATION.md)** - Knowledge graph memory provider
 
----
+### API & Configuration
+- **[API Reference](./reference/API_REFERENCE.md)** - Complete API documentation
+- **[Tools Configuration](./reference/tools_configuration.md)** - Tool system configuration
+- **[Safety Levels](./reference/SAFETY_LEVELS.md)** - Security levels explained
 
-## 🔌 Integration Guides
+### System Components
+- **[Circuit Breaker](./reference/CIRCUIT_BREAKER.md)** - Fault tolerance system
+- **[Team Tool Access](./reference/TEAM_TOOL_ACCESS.md)** - Team tool permissions
+- **[Multi-Agent Model Selection](./reference/MULTI_AGENT_MODEL_SELECTION.md)** - Model routing
+- **[Antigravity Auth](./reference/ANTIGRAVITY_AUTH.md)** - Authentication system
 
-### Chat Platforms
+## 🔧 Development
 
-#### English Guides
-- Telegram - See [main README](../README.md#-chat-apps-integration)
-- Discord - See [main README](../README.md#-chat-apps-integration)
-- WhatsApp - See [main README](../README.md#-chat-apps-integration)
+Resources for developers and contributors.
 
-#### Chinese Guides (中文指南)
-- [Telegram](channels/telegram/README.zh.md)
-- [Discord](channels/discord/README.zh.md)
-- [DingTalk](channels/dingtalk/README.zh.md)
-- [Feishu](channels/feishu/README.zh.md)
-- [LINE](channels/line/README.zh.md)
-- [MaixCAM](channels/maixcam/README.zh.md)
-- [OneBot](channels/onebot/README.zh.md)
-- [QQ](channels/qq/README.zh.md)
-- [Slack](channels/slack/README.zh.md)
-- [WeCom](channels/wecom/) - Multiple integration types
+- **[Developer Guide](./development/DEVELOPER_GUIDE.md)** - Development setup and workflow
+- **[Collaborative Chat Architecture](./development/COLLABORATIVE_CHAT_ARCHITECTURE.md)** - Chat system design
+- **[Collaborative Chat Flow](./development/COLLABORATIVE_CHAT_FLOW.txt)** - Message flow diagram
+- **[Troubleshooting](./development/troubleshooting.md)** - Common issues and solutions
 
-### LLM Providers
-- [Antigravity Auth](ANTIGRAVITY_AUTH.md) - Authentication guide
-- [Antigravity Usage](ANTIGRAVITY_USAGE.md) - Usage guide
-- OpenAI, Anthropic, Zhipu, etc. - See [main README](../README.md#-configuration)
+## 🔌 Channels
 
----
+Platform-specific integration guides.
 
-## 🛠️ Developer Documentation
+- **[Telegram](./channels/telegram/)** - Telegram bot setup
+- **[Discord](./channels/discord/)** - Discord bot integration
+- **[Slack](./channels/slack/)** - Slack app configuration
+- **[DingTalk](./channels/dingtalk/)** - DingTalk integration
+- **[Feishu](./channels/feishu/)** - Feishu/Lark setup
+- **[WeCom](./channels/wecom/)** - WeChat Work integration
+- **[QQ](./channels/qq/)** - QQ bot setup
+- **[LINE](./channels/line/)** - LINE bot integration
+- **[OneBot](./channels/onebot/)** - OneBot protocol
+- **[MaixCAM](./channels/maixcam/)** - MaixCAM device integration
 
-### API Documentation
-- [Collaborative Package API](../pkg/collaborative/README.md) - Platform-agnostic collaborative chat API
-- [Channels Package](../pkg/channels/README.md) - Channel integration API
+## 💾 Memory System
 
-### Design Documents
-- [Provider Refactoring](design/provider-refactoring.md) - Provider architecture
-- [Provider Tests](design/provider-refactoring-tests.md) - Testing strategy
+Vector memory and storage documentation.
 
-### Migration Guides
-- [Model List Migration](migration/model-list-migration.md) - Migrate model configurations
+- **[Memory Configuration Guide](./memory/CONFIG_GUIDE.md)** - Memory system setup
+- **[Vector Store](./memory/vector/)** - Vector database integration
 
----
+## 🎯 Skills & Plugins
 
-## 🔧 Configuration
+Extending PicoClaw with skills and plugins.
 
-### Templates
-- [Team Templates](../templates/teams/README.md) - Pre-built team configurations
-- [Config Examples](../config/README.md) - Configuration examples
+- **[IRC Gateway](./skills/IRC_GATEWAY.md)** - IRC bridge skill
 
-### Example Configurations
-- `config.example.json` - Full configuration example
-- `safety_examples.json` - Safety level examples
-- `collaborative-chat-*.json` - Collaborative chat examples
+## 📐 Design Documents
 
----
+Technical design documents and proposals.
 
-## 🐛 Troubleshooting
+- **[Provider Refactoring](./design/provider-refactoring.md)** - LLM provider redesign
+- **[Provider Refactoring Tests](./design/provider-refactoring-tests.md)** - Test strategy
+- **[Issue 783 Investigation](./design/issue-783-investigation-and-fix-plan.zh.md)** - Bug analysis (Chinese)
 
-- [Troubleshooting Guide](troubleshooting.md) - Common issues and solutions
-- [GitHub Issues](https://github.com/sipeed/picoclaw/issues) - Report bugs
-- [Discord Community](https://discord.gg/V4sAZ9XWpN) - Get help
+## 🔄 Migration Guides
 
----
+Guides for upgrading between versions.
 
-## 📖 Additional Resources
+- **[Model List Migration](./migration/model-list-migration.md)** - Model configuration updates
 
-### Multi-Language READMEs
-- [English](../README.md)
-- [中文](../README.zh.md)
-- [日本語](../README.ja.md)
-- [Português](../README.pt-br.md)
-- [Tiếng Việt](../README.vi.md)
-- [Français](../README.fr.md)
+## 📝 Additional Resources
 
-### Repository Overviews
-- [English](REPOSITORY_OVERVIEW.md)
-- [Tiếng Việt](REPOSITORY_OVERVIEW.vi.md)
+### Root Documentation
+- **[README](../README.md)** - Project overview (English)
+- **[README (中文)](../README.zh.md)** - Project overview (Chinese)
+- **[README (日本語)](../README.ja.md)** - Project overview (Japanese)
+- **[README (Français)](../README.fr.md)** - Project overview (French)
+- **[README (Português)](../README.pt-br.md)** - Project overview (Portuguese)
+- **[README (Tiếng Việt)](../README.vi.md)** - Project overview (Vietnamese)
 
-### Changelogs
-- [Main Changelog](../CHANGELOG.md) - All versions
-- [Multi-Agent Changelog](../CHANGELOG_MULTI_AGENT.md) - Multi-agent features
+### Project Management
+- **[CHANGELOG](../CHANGELOG.md)** - Version history
+- **[ROADMAP](../ROADMAP.md)** - Future plans
+- **[CONTRIBUTING](../CONTRIBUTING.md)** - Contribution guidelines
+- **[CONTRIBUTING (中文)](../CONTRIBUTING.zh.md)** - Contribution guidelines (Chinese)
 
 ### Release Notes
-- [v1.1.1 Release Notes](../RELEASE_NOTES_v1.1.1.md) - Latest release
+- **[v2.0.7](../RELEASE_NOTES_v2.0.7.md)** - Latest release
+- **[v2.0.6](../RELEASE_NOTES_v2.0.6.md)** - Previous release
+- **[v2.0.5](../RELEASE_NOTES_v2.0.5.md)** - Previous release
+- **[v1.1.1](../RELEASE_NOTES_v1.1.1.md)** - Legacy release
+
+### System Setup
+- **[Systemd Setup](../SYSTEMD_SETUP.md)** - Linux service configuration
+- **[Systemd README](../README_SYSTEMD.md)** - Systemd integration guide
+
+### Experimental
+- **[WASM Plugin POC](../WASM_PLUGIN_POC.md)** - WebAssembly plugin proof of concept
+- **[Enhanced Metrics Testing](../ENHANCED_METRICS_TESTING_GUIDE.md)** - Metrics system testing
+- **[Project Status](../PROJECT_STATUS.md)** - Current development status
+
+## 🔍 Quick Links
+
+### For New Users
+1. Start with [README](../README.md)
+2. Read [Architecture Overview](./architecture/ARCHITECTURE_OVERVIEW.md)
+3. Follow [Multi-Agent Guide](./guides/MULTI_AGENT_GUIDE.md)
+4. Configure your [Channel](./channels/)
+
+### For Developers
+1. Read [Developer Guide](./development/DEVELOPER_GUIDE.md)
+2. Study [Component Details](./architecture/COMPONENT_DETAILS.md)
+3. Review [Data Flow](./architecture/DATA_FLOW.md)
+4. Check [Troubleshooting](./development/troubleshooting.md)
+
+### For System Administrators
+1. Review [Safety Levels](./reference/SAFETY_LEVELS.md)
+2. Configure [Tools](./reference/tools_configuration.md)
+3. Setup [Systemd Service](../SYSTEMD_SETUP.md)
+4. Monitor with [Circuit Breaker](./reference/CIRCUIT_BREAKER.md)
+
+## 📞 Support
+
+- **Issues**: [GitHub Issues](https://github.com/sipeed/picoclaw/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/sipeed/picoclaw/discussions)
+- **Documentation Issues**: Report in [Issues](https://github.com/sipeed/picoclaw/issues) with `documentation` label
+
+## 📄 License
+
+PicoClaw is licensed under the MIT License. See [LICENSE](../LICENSE) for details.
 
 ---
 
-## 🎯 Documentation by Use Case
-
-### I want to...
-
-#### Run PicoClaw
-→ Start with [README](../README.md) and [Quick Start](../README.md#-quick-start)
-
-#### Set up multi-agent collaboration
-→ Read [Multi-Agent Guide](MULTI_AGENT_GUIDE.md) and [Team Agent Usage](TEAM_AGENT_USAGE.md)
-
-#### Enable collaborative chat in Telegram
-→ Follow [Collaborative Chat Quick Start](COLLABORATIVE_CHAT_QUICKSTART.md)
-
-#### Integrate with a chat platform
-→ Check [Integration Guides](#-integration-guides) for your platform
-
-#### Configure safety levels
-→ Read [Safety Levels](SAFETY_LEVELS.md) and [Safety Quick Start](SAFETY_QUICKSTART.md)
-
-#### Contribute to the project
-→ Read [Contributing Guide](../CONTRIBUTING.md)
-
-#### Understand the architecture
-→ Read [Repository Overview](REPOSITORY_OVERVIEW.md) and [Architecture](COLLABORATIVE_CHAT_ARCHITECTURE.md)
-
-#### Troubleshoot issues
-→ Check [Troubleshooting Guide](troubleshooting.md)
-
----
-
-## 📝 Documentation Status
-
-### ✅ Complete & Up-to-date
-- Core documentation (README, guides)
-- Multi-agent documentation
-- Collaborative chat documentation
-- Safety system documentation
-- API documentation
-
-### ⚠️ Needs Translation
-- Channel integration guides (mostly Chinese-only)
-- Some design documents
-
-### 🔄 In Progress
-- Video tutorials
-- Interactive examples
-- Expanded troubleshooting
-
----
-
-## 🤝 Contributing to Documentation
-
-Found an issue or want to improve the docs? We welcome contributions!
-
-1. Check [Contributing Guide](../CONTRIBUTING.md)
-2. Open an issue or PR on [GitHub](https://github.com/sipeed/picoclaw)
-3. Join our [Discord](https://discord.gg/V4sAZ9XWpN) to discuss
-
----
-
-## 📧 Support
-
-- **GitHub Issues**: https://github.com/sipeed/picoclaw/issues
-- **Discord**: https://discord.gg/V4sAZ9XWpN
-- **Twitter**: @SipeedIO
-- **Website**: https://picoclaw.io
-
----
-
-**Last Updated:** 2026-03-07  
-**Version:** 1.1.1+fixes
+**Last Updated**: 2026-03-09  
+**Documentation Version**: 2.0.7

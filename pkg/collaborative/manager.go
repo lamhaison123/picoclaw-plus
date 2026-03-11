@@ -49,6 +49,9 @@ type Manager struct {
 //
 // This function will be removed in v2.0.0.
 func NewManager() *Manager {
+	// Log deprecation warning at runtime
+	logger.WarnC("collaborative", "DEPRECATED: collaborative.NewManager() is deprecated and will be removed in v2.0.0. Use NewManagerV2() instead to avoid infinite loops and memory exhaustion issues.")
+
 	return NewManagerWithConfig(&Config{
 		MentionQueueSize:    20,
 		MentionRateLimit:    2 * time.Second,
@@ -58,7 +61,12 @@ func NewManager() *Manager {
 }
 
 // NewManagerWithConfig creates a manager with custom config
+//
+// Deprecated: Use NewManagerV2WithConfig() instead. This implementation lacks critical fixes.
 func NewManagerWithConfig(config *Config) *Manager {
+	// Log deprecation warning at runtime
+	logger.WarnC("collaborative", "DEPRECATED: collaborative.NewManagerWithConfig() is deprecated. Use NewManagerV2WithConfig() instead to avoid infinite loops and memory exhaustion issues.")
+
 	// Set defaults if not provided
 	if config.MentionQueueSize == 0 {
 		config.MentionQueueSize = 20

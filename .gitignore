@@ -1,0 +1,47 @@
+# PicoClaw .gitignore
+
+# Environment variables (v0.2.1)
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+/picoclaw
+/picoclaw.exe
+/picoclaw-launcher
+/picoclaw-launcher.exe
+/picoclaw-launcher-tui
+/picoclaw-launcher-tui.exe
+/build/
+/dist/
+
+# Workspace and data
+/workspace/
+/.picoclaw/
+*.db
+*.sqlite
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Test coverage
+coverage.out
+*.test
+
+# Vendor (if not committed)
+# /vendor/

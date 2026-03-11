@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 
 	"github.com/caarlos0/env/v11"
@@ -26,21 +27,20 @@ func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 
-	// Try []interface{} to handle mixed types
-	var raw []any
-	if err := json.Unmarshal(data, &raw); err != nil {
+	// Try []json.RawMessage to avoid float64 precision loss for large numbers
+	var rawMessages []json.RawMessage
+	if err := json.Unmarshal(data, &rawMessages); err != nil {
 		return err
 	}
 
-	result := make([]string, 0, len(raw))
-	for _, v := range raw {
-		switch val := v.(type) {
-		case string:
-			result = append(result, val)
-		case float64:
-			result = append(result, fmt.Sprintf("%.0f", val))
-		default:
-			result = append(result, fmt.Sprintf("%v", val))
+	result := make([]string, 0, len(rawMessages))
+	for _, rawMsg := range rawMessages {
+		var s string
+		if err := json.Unmarshal(rawMsg, &s); err == nil {
+			result = append(result, s)
+		} else {
+			// If not a JSON string, retain its exact original text representation
+			result = append(result, string(rawMsg))
 		}
 	}
 	*f = result
@@ -51,12 +51,15 @@ type Config struct {
 	Agents    AgentsConfig    `json:"agents"`
 	Bindings  []AgentBinding  `json:"bindings,omitempty"`
 	Session   SessionConfig   `json:"session,omitempty"`
+	Routing   RoutingConfig   `json:"routing,omitempty"` // v0.2.1: Model routing for cost optimization
 	Channels  ChannelsConfig  `json:"channels"`
 	Providers ProvidersConfig `json:"providers,omitempty"`
 	ModelList []ModelConfig   `json:"model_list"` // New model-centric provider configuration
 	Gateway   GatewayConfig   `json:"gateway"`
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
+	Memory    MemoryConfig    `json:"memory,omitempty"`    // v2.0.7: Vector DB & Memory Layer
+	Embedding EmbeddingConfig `json:"embedding,omitempty"` // Legacy/Example support
 	Devices   DevicesConfig   `json:"devices"`
 }
 
@@ -130,13 +133,14 @@ func (m AgentModelConfig) MarshalJSON() ([]byte, error) {
 }
 
 type AgentConfig struct {
-	ID        string            `json:"id"`
-	Default   bool              `json:"default,omitempty"`
-	Name      string            `json:"name,omitempty"`
-	Workspace string            `json:"workspace,omitempty"`
-	Model     *AgentModelConfig `json:"model,omitempty"`
-	Skills    []string          `json:"skills,omitempty"`
-	Subagents *SubagentsConfig  `json:"subagents,omitempty"`
+	ID                  string            `json:"id"`
+	Default             bool              `json:"default,omitempty"`
+	Name                string            `json:"name,omitempty"`
+	Workspace           string            `json:"workspace,omitempty"`
+	RestrictToWorkspace *bool             `json:"restrict_to_workspace,omitempty"`
+	Model               *AgentModelConfig `json:"model,omitempty"`
+	Skills              []string          `json:"skills,omitempty"`
+	Subagents           *SubagentsConfig  `json:"subagents,omitempty"`
 }
 
 type SubagentsConfig struct {
@@ -165,6 +169,26 @@ type AgentBinding struct {
 type SessionConfig struct {
 	DMScope       string              `json:"dm_scope,omitempty"`
 	IdentityLinks map[string][]string `json:"identity_links,omitempty"`
+
+	// v0.2.1: Configurable summarization thresholds
+	SummarizationMessageThreshold int     `json:"summarization_message_threshold" env:"PICOCLAW_SESSION_SUMMARIZATION_MESSAGE_THRESHOLD"`
+	SummarizationTokenPercent     float64 `json:"summarization_token_percent"     env:"PICOCLAW_SESSION_SUMMARIZATION_TOKEN_PERCENT"`
+
+	// v0.2.1: Storage backend configuration
+	StorageBackend string `json:"storage_backend,omitempty" env:"PICOCLAW_SESSION_STORAGE_BACKEND"` // "json" or "jsonl"
+	AutoMigrate    bool   `json:"auto_migrate,omitempty"    env:"PICOCLAW_SESSION_AUTO_MIGRATE"`    // Auto-migrate from JSON to JSONL
+}
+
+// RoutingConfig configures model routing for cost optimization (v0.2.1)
+type RoutingConfig struct {
+	Enabled bool               `json:"enabled" env:"PICOCLAW_ROUTING_ENABLED"`
+	Tiers   []ModelRoutingTier `json:"tiers,omitempty"`
+}
+
+// ModelRoutingTier represents a tier of models for routing
+type ModelRoutingTier struct {
+	Name   string   `json:"name"`   // Tier name (e.g., "cheap", "expensive")
+	Models []string `json:"models"` // Model names in this tier
 }
 
 type AgentDefaults struct {
@@ -561,11 +585,32 @@ type PerplexityConfig struct {
 	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_MAX_RESULTS"`
 }
 
+type SearXNGConfig struct {
+	Enabled    bool   `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_SEARXNG_ENABLED"`
+	BaseURL    string `json:"base_url"    env:"PICOCLAW_TOOLS_WEB_SEARXNG_BASE_URL"`
+	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_SEARXNG_MAX_RESULTS"`
+}
+
+type GLMConfig struct {
+	Enabled    bool   `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_GLM_ENABLED"`
+	APIKey     string `json:"api_key"     env:"PICOCLAW_TOOLS_WEB_GLM_API_KEY"`
+	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_GLM_MAX_RESULTS"`
+}
+
+type ExaConfig struct {
+	Enabled    bool   `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_EXA_ENABLED"`
+	APIKey     string `json:"api_key"     env:"PICOCLAW_TOOLS_WEB_EXA_API_KEY"`
+	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_EXA_MAX_RESULTS"`
+}
+
 type WebToolsConfig struct {
 	Brave      BraveConfig      `json:"brave"`
 	Tavily     TavilyConfig     `json:"tavily"`
 	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
 	Perplexity PerplexityConfig `json:"perplexity"`
+	SearXNG    SearXNGConfig    `json:"searxng"`
+	GLM        GLMConfig        `json:"glm"`
+	Exa        ExaConfig        `json:"exa"`
 	// Proxy is an optional proxy URL for web tools (http/https/socks5/socks5h).
 	// For authenticated proxies, prefer HTTP_PROXY/HTTPS_PROXY env vars instead of embedding credentials in config.
 	Proxy           string `json:"proxy,omitempty"             env:"PICOCLAW_TOOLS_WEB_PROXY"`
@@ -598,6 +643,16 @@ type ToolsConfig struct {
 	Skills          SkillsToolsConfig  `json:"skills"`
 	MediaCleanup    MediaCleanupConfig `json:"media_cleanup"`
 	MCP             MCPConfig          `json:"mcp"`
+
+	// v0.2.1: Individual tool enable/disable flags
+	FileToolsEnabled     bool `json:"file_tools_enabled"    env:"PICOCLAW_TOOLS_FILE_ENABLED"`
+	ShellToolsEnabled    bool `json:"shell_tools_enabled"   env:"PICOCLAW_TOOLS_SHELL_ENABLED"`
+	WebToolsEnabled      bool `json:"web_tools_enabled"     env:"PICOCLAW_TOOLS_WEB_ENABLED"`
+	MessageToolEnabled   bool `json:"message_tool_enabled"  env:"PICOCLAW_TOOLS_MESSAGE_ENABLED"`
+	SpawnToolEnabled     bool `json:"spawn_tool_enabled"    env:"PICOCLAW_TOOLS_SPAWN_ENABLED"`
+	TeamToolsEnabled     bool `json:"team_tools_enabled"    env:"PICOCLAW_TOOLS_TEAM_ENABLED"`
+	SkillToolsEnabled    bool `json:"skill_tools_enabled"   env:"PICOCLAW_TOOLS_SKILL_ENABLED"`
+	HardwareToolsEnabled bool `json:"hardware_tools_enabled" env:"PICOCLAW_TOOLS_HARDWARE_ENABLED"`
 }
 
 type SkillsToolsConfig struct {
@@ -656,6 +711,25 @@ type MCPConfig struct {
 }
 
 func LoadConfig(path string) (*Config, error) {
+	// v0.2.1: Load .env file before config
+	// Try multiple locations in order of precedence
+	envPaths := []string{
+		".env",       // Current directory
+		".env.local", // Local overrides
+	}
+
+	// Add PICOCLAW_HOME/.env if set
+	if picoclawHome := os.Getenv("PICOCLAW_HOME"); picoclawHome != "" {
+		envPaths = append([]string{
+			filepath.Join(picoclawHome, ".env"),
+		}, envPaths...)
+	}
+
+	// Load .env files (errors are logged but not fatal)
+	for _, envPath := range envPaths {
+		_ = LoadEnvFile(envPath)
+	}
+
 	cfg := DefaultConfig()
 
 	data, err := os.ReadFile(path)
@@ -684,12 +758,13 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	// v0.2.1: Parse environment variables (overrides config file)
 	if err := env.Parse(cfg); err != nil {
 		return nil, err
 	}
 
 	// Migrate legacy channel config fields to new unified structures
-	cfg.migrateChannelConfigs()
+	cfg.migrateLegacyConfigs()
 
 	// Auto-migrate: if only legacy providers config exists, convert to model_list
 	if len(cfg.ModelList) == 0 && cfg.HasProvidersConfig() {
@@ -704,13 +779,19 @@ func LoadConfig(path string) (*Config, error) {
 	return cfg, nil
 }
 
-func (c *Config) migrateChannelConfigs() {
-	// Discord: mention_only -> group_trigger.mention_only
+func (c *Config) migrateLegacyConfigs() {
+	// 1. Migrate top-level embedding to memory.embedding if memory is enabled
+	// but memory.embedding is not fully configured (backward compatibility)
+	if c.Embedding.Provider != "" && c.Memory.Enabled && (c.Memory.Embedding.Provider == "" || c.Memory.Embedding.Provider == "none") {
+		c.Memory.Embedding = c.Embedding
+	}
+
+	// 2. Discord: mention_only -> group_trigger.mention_only
 	if c.Channels.Discord.MentionOnly && !c.Channels.Discord.GroupTrigger.MentionOnly {
 		c.Channels.Discord.GroupTrigger.MentionOnly = true
 	}
 
-	// OneBot: group_trigger_prefix -> group_trigger.prefixes
+	// 3. OneBot: group_trigger_prefix -> group_trigger.prefixes
 	if len(c.Channels.OneBot.GroupTriggerPrefix) > 0 &&
 		len(c.Channels.OneBot.GroupTrigger.Prefixes) == 0 {
 		c.Channels.OneBot.GroupTrigger.Prefixes = c.Channels.OneBot.GroupTriggerPrefix
@@ -835,4 +916,95 @@ func (c *Config) ValidateModelList() error {
 		}
 	}
 	return nil
+}
+
+// MemoryConfig configures long-term memory and vector storage (v2.0.7)
+type MemoryConfig struct {
+	Enabled        bool                 `json:"enabled"         env:"PICOCLAW_MEMORY_ENABLED"`
+	VectorStore    VectorStoreConfig    `json:"vector_store"`
+	MemoryProvider MemoryProviderConfig `json:"memory_provider"`
+	Embedding      EmbeddingConfig      `json:"embedding"`
+	Cache          MemoryCacheConfig    `json:"cache"`
+}
+
+// EmbeddingConfig configures text embedding generation
+type EmbeddingConfig struct {
+	Provider  string `json:"provider"`  // "openai", "local", "none"
+	Model     string `json:"model"`     // e.g. "text-embedding-3-small"
+	Dimension int    `json:"dimension"` // e.g. 384, 1536
+	APIKey    string `json:"api_key"     env:"PICOCLAW_EMBEDDING_API_KEY"`
+	BaseURL   string `json:"base_url"    env:"PICOCLAW_EMBEDDING_BASE_URL"`
+	TimeoutMS int    `json:"timeout_ms"  env:"PICOCLAW_EMBEDDING_TIMEOUT_MS"`
+}
+
+// VectorStoreConfig configures vector database for semantic search
+type VectorStoreConfig struct {
+	Provider string        `json:"provider"` // "qdrant", "lancedb", "none"
+	Qdrant   QdrantConfig  `json:"qdrant"`
+	LanceDB  LanceDBConfig `json:"lancedb"`
+}
+
+// QdrantConfig configures Qdrant vector database
+type QdrantConfig struct {
+	Enabled    bool   `json:"enabled"     env:"PICOCLAW_MEMORY_VECTOR_QDRANT_ENABLED"`
+	URL        string `json:"url"         env:"PICOCLAW_MEMORY_VECTOR_QDRANT_URL"`
+	APIKey     string `json:"api_key"     env:"PICOCLAW_MEMORY_VECTOR_QDRANT_API_KEY"`
+	Collection string `json:"collection"  env:"PICOCLAW_MEMORY_VECTOR_QDRANT_COLLECTION"`
+	Dimension  int    `json:"dimension"   env:"PICOCLAW_MEMORY_VECTOR_QDRANT_DIMENSION"`
+	TimeoutMS  int    `json:"timeout_ms"  env:"PICOCLAW_MEMORY_VECTOR_QDRANT_TIMEOUT_MS"`
+}
+
+// LanceDBConfig configures LanceDB vector database (optional, CGO-based)
+type LanceDBConfig struct {
+	Enabled   bool   `json:"enabled"    env:"PICOCLAW_MEMORY_VECTOR_LANCEDB_ENABLED"`
+	Mode      string `json:"mode"       env:"PICOCLAW_MEMORY_VECTOR_LANCEDB_MODE"` // "api" or "cgo"
+	URL       string `json:"url"        env:"PICOCLAW_MEMORY_VECTOR_LANCEDB_URL"`
+	Path      string `json:"path"       env:"PICOCLAW_MEMORY_VECTOR_LANCEDB_PATH"`
+	Dataset   string `json:"dataset"    env:"PICOCLAW_MEMORY_VECTOR_LANCEDB_DATASET"`
+	TimeoutMS int    `json:"timeout_ms" env:"PICOCLAW_MEMORY_VECTOR_LANCEDB_TIMEOUT_MS"`
+}
+
+// MemoryProviderConfig configures memory layer (Mem0, MindGraph)
+type MemoryProviderConfig struct {
+	Provider  string          `json:"provider"` // "mem0", "mindgraph", "sidecar", "none"
+	Sidecar   SidecarConfig   `json:"sidecar"`
+	Mem0      Mem0Config      `json:"mem0"`
+	MindGraph MindGraphConfig `json:"mindgraph"`
+}
+
+// SidecarConfig configures sidecar API for Python-based memory providers
+type SidecarConfig struct {
+	Enabled        bool                 `json:"enabled"         env:"PICOCLAW_MEMORY_SIDECAR_ENABLED"`
+	Endpoint       string               `json:"endpoint"        env:"PICOCLAW_MEMORY_SIDECAR_ENDPOINT"`
+	TimeoutMS      int                  `json:"timeout_ms"      env:"PICOCLAW_MEMORY_SIDECAR_TIMEOUT_MS"`
+	CircuitBreaker CircuitBreakerConfig `json:"circuit_breaker"`
+}
+
+// CircuitBreakerConfig configures circuit breaker for sidecar calls
+type CircuitBreakerConfig struct {
+	MaxFailures   int `json:"max_failures"     env:"PICOCLAW_MEMORY_SIDECAR_CB_MAX_FAILURES"`
+	ResetTimeoutS int `json:"reset_timeout_s"  env:"PICOCLAW_MEMORY_SIDECAR_CB_RESET_TIMEOUT_S"`
+}
+
+// Mem0Config configures Mem0 personalized memory provider
+type Mem0Config struct {
+	Enabled   bool   `json:"enabled"    env:"PICOCLAW_MEMORY_MEM0_ENABLED"`
+	URL       string `json:"url"        env:"PICOCLAW_MEMORY_MEM0_URL"`
+	APIKey    string `json:"api_key"    env:"PICOCLAW_MEMORY_MEM0_API_KEY"`
+	TimeoutMS int    `json:"timeout_ms" env:"PICOCLAW_MEMORY_MEM0_TIMEOUT_MS"`
+}
+
+// MindGraphConfig configures MindGraph knowledge graph provider
+type MindGraphConfig struct {
+	Enabled   bool   `json:"enabled"    env:"PICOCLAW_MEMORY_MINDGRAPH_ENABLED"`
+	URL       string `json:"url"        env:"PICOCLAW_MEMORY_MINDGRAPH_URL"`
+	APIKey    string `json:"api_key"    env:"PICOCLAW_MEMORY_MINDGRAPH_API_KEY"`
+	TimeoutMS int    `json:"timeout_ms" env:"PICOCLAW_MEMORY_MINDGRAPH_TIMEOUT_MS"`
+}
+
+// MemoryCacheConfig configures in-memory cache for vector/memory results
+type MemoryCacheConfig struct {
+	Enabled    bool `json:"enabled"     env:"PICOCLAW_MEMORY_CACHE_ENABLED"`
+	MaxEntries int  `json:"max_entries" env:"PICOCLAW_MEMORY_CACHE_MAX_ENTRIES"`
+	TTLSeconds int  `json:"ttl_seconds" env:"PICOCLAW_MEMORY_CACHE_TTL_SECONDS"`
 }

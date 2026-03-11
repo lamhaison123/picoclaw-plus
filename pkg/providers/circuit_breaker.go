@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -11,9 +12,9 @@ import (
 type State int
 
 const (
-	StateClosed State = iota // Normal operation
-	StateOpen                // Failing fast
-	StateHalfOpen            // Testing recovery
+	StateClosed   State = iota // Normal operation
+	StateOpen                  // Failing fast
+	StateHalfOpen              // Testing recovery
 )
 
 func (s State) String() string {
@@ -31,21 +32,21 @@ func (s State) String() string {
 
 // BreakerConfig holds circuit breaker configuration.
 type BreakerConfig struct {
-	FailureThreshold  int           // Consecutive failures to open circuit
-	FailureRate       float64       // Failure rate (0.0-1.0) to open circuit
-	OpenTimeout       time.Duration // Time to wait before half-open
-	HalfOpenMaxCalls  int           // Max concurrent calls in half-open
-	SamplingWindow    time.Duration // Window for failure rate calculation
+	FailureThreshold int           // Consecutive failures to open circuit
+	FailureRate      float64       // Failure rate (0.0-1.0) to open circuit
+	OpenTimeout      time.Duration // Time to wait before half-open
+	HalfOpenMaxCalls int           // Max concurrent calls in half-open
+	SamplingWindow   time.Duration // Window for failure rate calculation
 }
 
 // DefaultBreakerConfig returns sensible defaults.
 func DefaultBreakerConfig() BreakerConfig {
 	return BreakerConfig{
-		FailureThreshold:  5,
-		FailureRate:       0.5,
-		OpenTimeout:       30 * time.Second,
-		HalfOpenMaxCalls:  2,
-		SamplingWindow:    10 * time.Second,
+		FailureThreshold: 5,
+		FailureRate:      0.5,
+		OpenTimeout:      30 * time.Second,
+		HalfOpenMaxCalls: 2,
+		SamplingWindow:   10 * time.Second,
 	}
 }
 
@@ -164,16 +165,17 @@ func (cb *circuitBreaker) afterCall(err error) {
 	defer cb.mu.Unlock()
 
 	now := cb.nowFunc()
-	
+
 	// Skip recording non-system errors (e.g. auth, format) as failures
 	// These errors are client-side and shouldn't trip the circuit breaker.
 	if err != nil {
-		if _, ok := err.(*nonSystemError); ok {
+		var nse *nonSystemError
+		if errors.As(err, &nse) {
 			// Treat as success for the circuit breaker's health tracking
 			err = nil
 		}
 	}
-	
+
 	success := err == nil
 
 	// Update metrics
@@ -289,11 +291,12 @@ func (cb *circuitBreaker) transitionTo(newState State, now time.Time) {
 	cb.state = newState
 	cb.lastStateChange = now
 
-	if newState == StateClosed {
+	switch newState {
+	case StateClosed:
 		// Reset counters when closing
 		cb.consecutiveFails = 0
 		cb.recentCalls = make([]callResult, 0)
-	} else if newState == StateHalfOpen {
+	case StateHalfOpen:
 		cb.halfOpenCalls = 0
 	}
 }
